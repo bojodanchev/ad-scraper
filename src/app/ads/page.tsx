@@ -121,8 +121,9 @@ function AdsContent() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Platforms</SelectItem>
-            <SelectItem value="meta">Meta</SelectItem>
+            <SelectItem value="meta">Meta Ads</SelectItem>
             <SelectItem value="tiktok">TikTok</SelectItem>
+            <SelectItem value="instagram">Instagram</SelectItem>
           </SelectContent>
         </Select>
 

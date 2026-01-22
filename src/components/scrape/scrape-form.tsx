@@ -14,19 +14,62 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+type Platform = 'meta' | 'tiktok' | 'instagram';
+type SearchType = 'keyword' | 'hashtag' | 'profile' | 'advertiser';
+
+// Platform-specific search type options
+const searchTypeOptions: Record<Platform, { value: SearchType; label: string }[]> = {
+  meta: [
+    { value: 'keyword', label: 'Keyword Search' },
+    { value: 'advertiser', label: 'Advertiser / Page ID' },
+  ],
+  tiktok: [
+    { value: 'hashtag', label: 'Hashtag (e.g. #fitness)' },
+    { value: 'profile', label: 'Profile/Creator (e.g. @username)' },
+    { value: 'keyword', label: 'Search Query' },
+  ],
+  instagram: [
+    { value: 'hashtag', label: 'Hashtag (e.g. #fitness)' },
+    { value: 'profile', label: 'Profile (e.g. @username)' },
+    { value: 'keyword', label: 'Search' },
+  ],
+};
+
 export function ScrapeForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [platform, setPlatform] = useState<'meta' | 'tiktok'>('meta');
-  const [searchType, setSearchType] = useState<'keyword' | 'advertiser'>(
-    'keyword'
-  );
+  const [platform, setPlatform] = useState<Platform>('meta');
+  const [searchType, setSearchType] = useState<SearchType>('keyword');
   const [query, setQuery] = useState('');
   const [country, setCountry] = useState('US');
   const [mediaType, setMediaType] = useState('ALL');
-  const [maxItems, setMaxItems] = useState('100');
+  const [maxItems, setMaxItems] = useState('50');
+  const [sortBy, setSortBy] = useState('popular');
+
+  // Reset search type when platform changes
+  const handlePlatformChange = (newPlatform: Platform) => {
+    setPlatform(newPlatform);
+    // Set default search type for the new platform
+    const defaultType = searchTypeOptions[newPlatform][0].value;
+    setSearchType(defaultType);
+  };
+
+  // Get placeholder text based on platform and search type
+  const getPlaceholder = () => {
+    if (platform === 'meta') {
+      return searchType === 'keyword'
+        ? 'e.g., dropshipping, AI automation, weight loss'
+        : 'e.g., 123456789 or page URL';
+    }
+    if (platform === 'tiktok' || platform === 'instagram') {
+      if (searchType === 'hashtag') return 'e.g., fitness, makeupgtutorial, viral';
+      if (searchType === 'profile') return 'e.g., garyvee, hubspot, nike';
+      return 'e.g., workout tips, cooking hacks';
+    }
+    return 'Enter search query...';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,12 +83,13 @@ export function ScrapeForm() {
         body: JSON.stringify({
           platform,
           searchType,
-          query,
+          query: query.replace(/^[@#]/, ''), // Remove @ or # prefix if user added it
           filters: {
             country,
             mediaType,
             maxItems: parseInt(maxItems),
             activeOnly: true,
+            sortBy, // For TikTok/Instagram
           },
         }),
       });
@@ -77,16 +121,22 @@ export function ScrapeForm() {
             <Label>Platform</Label>
             <Select
               value={platform}
-              onValueChange={(v) => setPlatform(v as 'meta' | 'tiktok')}
+              onValueChange={(v) => handlePlatformChange(v as Platform)}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="meta">Meta (Facebook/Instagram)</SelectItem>
-                <SelectItem value="tiktok">TikTok</SelectItem>
+                <SelectItem value="meta">Meta Ads Library</SelectItem>
+                <SelectItem value="tiktok">TikTok (Viral Content)</SelectItem>
+                <SelectItem value="instagram">Instagram (Viral Content)</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              {platform === 'meta' && 'Search Facebook Ads Library for competitor ads'}
+              {platform === 'tiktok' && 'Find viral TikTok videos by hashtag, creator, or search'}
+              {platform === 'instagram' && 'Find viral Instagram posts by hashtag or profile'}
+            </p>
           </div>
 
           {/* Search Type */}
@@ -94,18 +144,17 @@ export function ScrapeForm() {
             <Label>Search Type</Label>
             <Select
               value={searchType}
-              onValueChange={(v) =>
-                setSearchType(v as 'keyword' | 'advertiser')
-              }
+              onValueChange={(v) => setSearchType(v as SearchType)}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="keyword">Keyword Search</SelectItem>
-                <SelectItem value="advertiser">
-                  Advertiser / Page ID
-                </SelectItem>
+                {searchTypeOptions[platform].map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -113,55 +162,74 @@ export function ScrapeForm() {
           {/* Query */}
           <div className="space-y-2">
             <Label>
-              {searchType === 'keyword' ? 'Search Keyword' : 'Page ID'}
+              {searchType === 'hashtag' && 'Hashtag'}
+              {searchType === 'profile' && 'Username'}
+              {searchType === 'keyword' && 'Search Query'}
+              {searchType === 'advertiser' && 'Page ID'}
             </Label>
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={
-                searchType === 'keyword'
-                  ? 'e.g., dropshipping, AI automation, weight loss'
-                  : 'e.g., 123456789 or page URL'
-              }
+              placeholder={getPlaceholder()}
               required
             />
           </div>
 
           {/* Filters Row */}
-          <div className="grid grid-cols-3 gap-4">
-            {/* Country */}
-            <div className="space-y-2">
-              <Label>Country</Label>
-              <Select value={country} onValueChange={setCountry}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="US">United States</SelectItem>
-                  <SelectItem value="GB">United Kingdom</SelectItem>
-                  <SelectItem value="CA">Canada</SelectItem>
-                  <SelectItem value="AU">Australia</SelectItem>
-                  <SelectItem value="DE">Germany</SelectItem>
-                  <SelectItem value="FR">France</SelectItem>
-                  <SelectItem value="ALL">All Countries</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Country - Only for Meta */}
+            {platform === 'meta' && (
+              <div className="space-y-2">
+                <Label>Country</Label>
+                <Select value={country} onValueChange={setCountry}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="US">United States</SelectItem>
+                    <SelectItem value="GB">United Kingdom</SelectItem>
+                    <SelectItem value="CA">Canada</SelectItem>
+                    <SelectItem value="AU">Australia</SelectItem>
+                    <SelectItem value="DE">Germany</SelectItem>
+                    <SelectItem value="FR">France</SelectItem>
+                    <SelectItem value="ALL">All Countries</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            {/* Media Type */}
-            <div className="space-y-2">
-              <Label>Media Type</Label>
-              <Select value={mediaType} onValueChange={setMediaType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Types</SelectItem>
-                  <SelectItem value="VIDEO">Video Only</SelectItem>
-                  <SelectItem value="IMAGE">Image Only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Sort By - For TikTok/Instagram */}
+            {(platform === 'tiktok' || platform === 'instagram') && (
+              <div className="space-y-2">
+                <Label>Sort By</Label>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="popular">Most Popular</SelectItem>
+                    <SelectItem value="latest">Most Recent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Media Type - Only for Meta */}
+            {platform === 'meta' && (
+              <div className="space-y-2">
+                <Label>Media Type</Label>
+                <Select value={mediaType} onValueChange={setMediaType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Types</SelectItem>
+                    <SelectItem value="VIDEO">Video Only</SelectItem>
+                    <SelectItem value="IMAGE">Image Only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Max Items */}
             <div className="space-y-2">
@@ -171,10 +239,10 @@ export function ScrapeForm() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
                   <SelectItem value="50">50</SelectItem>
                   <SelectItem value="100">100</SelectItem>
                   <SelectItem value="200">200</SelectItem>
-                  <SelectItem value="500">500</SelectItem>
                 </SelectContent>
               </Select>
             </div>

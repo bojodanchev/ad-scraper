@@ -4,6 +4,7 @@ import { db, ensureInitialized } from '@/lib/db/client';
 import { scrapeJobs, ads, advertisers } from '@/lib/db/schema';
 import { startMetaScrape, getMetaScrapeResults } from '@/lib/apify/meta-scraper';
 import { startTikTokScrape, getTikTokScrapeResults } from '@/lib/apify/tiktok-scraper';
+import { startInstagramScrape, getInstagramScrapeResults } from '@/lib/apify/instagram-scraper';
 import { eq } from 'drizzle-orm';
 
 export const maxDuration = 300; // 5 minutes for Vercel Pro
@@ -11,7 +12,7 @@ export const maxDuration = 300; // 5 minutes for Vercel Pro
 export async function POST(request: NextRequest) {
   try {
     await ensureInitialized();
-    
+
     const body = await request.json();
     const { platform, searchType, query, filters } = body;
 
@@ -50,30 +51,39 @@ export async function POST(request: NextRequest) {
           maxItems: filters?.maxItems || 100,
         });
       } else if (platform === 'tiktok') {
+        // TikTok: supports hashtags, profiles, or search queries
         runId = await startTikTokScrape({
-          keyword: query,
-          region: filters?.country || 'US',
-          period: filters?.period || '30',
-          orderBy: filters?.orderBy || 'popular',
-          adFormat: filters?.adFormat || 'ALL',
-          maxItems: filters?.maxItems || 100,
+          hashtags: searchType === 'hashtag' ? [query] : undefined,
+          profiles: searchType === 'profile' ? [query] : undefined,
+          searchQueries: searchType === 'keyword' ? [query] : undefined,
+          sortBy: filters?.sortBy || 'popular',
+          maxItems: filters?.maxItems || 50,
+        });
+      } else if (platform === 'instagram') {
+        // Instagram: supports hashtags, profiles, or search
+        runId = await startInstagramScrape({
+          search: searchType === 'keyword' ? query : undefined,
+          searchType: searchType === 'keyword' ? 'hashtag' : undefined,
+          hashtags: searchType === 'hashtag' ? [query] : undefined,
+          usernames: searchType === 'profile' ? [query] : undefined,
+          resultsLimit: filters?.maxItems || 50,
         });
       } else {
         return NextResponse.json(
-          { error: 'Invalid platform. Use "meta" or "tiktok"' },
+          { error: 'Invalid platform. Use "meta", "tiktok", or "instagram"' },
           { status: 400 }
         );
       }
     } catch (err) {
       await db
         .update(scrapeJobs)
-        .set({ 
-          status: 'failed', 
+        .set({
+          status: 'failed',
           error: err instanceof Error ? err.message : 'Failed to start scraper',
           completedAt: new Date().toISOString()
         })
         .where(eq(scrapeJobs.id, jobId));
-      
+
       return NextResponse.json(
         { error: 'Failed to start scraper. Check your APIFY_TOKEN.' },
         { status: 500 }
@@ -109,8 +119,12 @@ async function processResults(jobId: string, platform: string, runId: string) {
 
     if (platform === 'meta') {
       result = await getMetaScrapeResults(runId);
-    } else {
+    } else if (platform === 'tiktok') {
       result = await getTikTokScrapeResults(runId);
+    } else if (platform === 'instagram') {
+      result = await getInstagramScrapeResults(runId);
+    } else {
+      throw new Error(`Unknown platform: ${platform}`);
     }
 
     if (result.status !== 'completed') {

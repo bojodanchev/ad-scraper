@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, ensureInitialized } from '@/lib/db/client';
 import { ads, advertisers } from '@/lib/db/schema';
-import { eq, desc, asc, and, gte, lte, sql } from 'drizzle-orm';
+import { eq, desc, asc, and, sql } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,24 +49,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Days running filters
+    // Days running filters - need to handle NULL values
     if (minDaysRunning) {
-      conditions.push(gte(ads.daysRunning, parseInt(minDaysRunning)));
+      const minDays = parseInt(minDaysRunning);
+      conditions.push(sql`${ads.daysRunning} IS NOT NULL AND ${ads.daysRunning} >= ${minDays}`);
     }
     if (maxDaysRunning) {
-      conditions.push(lte(ads.daysRunning, parseInt(maxDaysRunning)));
+      const maxDays = parseInt(maxDaysRunning);
+      conditions.push(sql`${ads.daysRunning} IS NOT NULL AND ${ads.daysRunning} <= ${maxDays}`);
     }
 
-    // Exclude DCO ads with template variables
+    // Exclude DCO ads with template variables like {{product.name}}
+    // Split into separate conditions to ensure proper SQL generation
     if (excludeDco) {
       conditions.push(
-        sql`${ads.headline} NOT LIKE '%{{%' AND ${ads.bodyText} NOT LIKE '%{{%'`
+        sql`(${ads.headline} IS NULL OR ${ads.headline} NOT LIKE '%{{%')`
+      );
+      conditions.push(
+        sql`(${ads.bodyText} IS NULL OR ${ads.bodyText} NOT LIKE '%{{%')`
       );
     }
 
     // Determine sort column and direction
-    const sortColumn = sortBy === 'daysRunning' ? ads.daysRunning : ads.scrapedAt;
+    // For daysRunning, use COALESCE to handle NULLs (put them at the end)
     const orderFn = sortOrder === 'asc' ? asc : desc;
+
+    // Build order by clause - handle NULL values for daysRunning
+    let orderByClause;
+    if (sortBy === 'daysRunning') {
+      // Use COALESCE to put NULLs at the end (treat as 0 for asc, 9999 for desc)
+      const nullDefault = sortOrder === 'asc' ? 99999 : 0;
+      orderByClause = sortOrder === 'asc'
+        ? sql`COALESCE(${ads.daysRunning}, ${nullDefault}) ASC`
+        : sql`COALESCE(${ads.daysRunning}, ${nullDefault}) DESC`;
+    } else {
+      orderByClause = orderFn(ads.scrapedAt);
+    }
 
     // Query ads with advertiser info
     const results = await db
@@ -95,7 +113,7 @@ export async function GET(request: NextRequest) {
       .from(ads)
       .leftJoin(advertisers, eq(ads.advertiserId, advertisers.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(orderFn(sortColumn))
+      .orderBy(orderByClause)
       .limit(limit)
       .offset(offset);
 

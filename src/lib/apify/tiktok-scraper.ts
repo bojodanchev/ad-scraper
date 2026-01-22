@@ -2,80 +2,102 @@ import { apifyClient } from './client';
 import { nanoid } from 'nanoid';
 import type { NewAd, NewAdvertiser } from '../db/schema';
 
-// Using the TikTok Creative Center Top Ads Scraper
-// https://apify.com/codebyte/tiktok-creative-center-top-ads
-const TIKTOK_ACTOR_ID = 'codebyte/tiktok-creative-center-top-ads';
+// Using Clockworks TikTok Scraper for viral organic content
+// https://apify.com/clockworks/tiktok-scraper
+const TIKTOK_ACTOR_ID = 'clockworks/tiktok-scraper';
 
 export interface TikTokScrapeInput {
-  keyword?: string;
-  region?: string;
-  period?: '7' | '30' | '180'; // days
-  orderBy?: 'popular' | 'ctr' | 'cvr' | 'impression' | 'like';
-  adFormat?: 'ALL' | 'SINGLE_VIDEO' | 'IMAGE' | 'CAROUSEL';
+  // Search options
+  hashtags?: string[];        // Hashtags to search (without #)
+  profiles?: string[];        // Usernames to scrape
+  searchQueries?: string[];   // Search terms
+  videoUrls?: string[];       // Direct video URLs
+
+  // Filters
+  sortBy?: 'latest' | 'oldest' | 'popular';
   maxItems?: number;
+
+  // Download options
+  downloadVideos?: boolean;
+  downloadCovers?: boolean;
 }
 
-export interface TikTokAdResult {
+// Output structure from clockworks/tiktok-scraper
+export interface TikTokVideoResult {
   id: string;
-  advertiserName?: string;
-  advertiserId?: string;
+  webVideoUrl?: string;
   videoUrl?: string;
-  videoPreviewUrl?: string;
-  thumbnailUrl?: string;
-  caption?: string;
-  hashtags?: string[];
-  likes?: number;
-  comments?: number;
-  shares?: number;
-  impressions?: number;
-  ctr?: number;
-  reach?: number;
-  duration?: number;
-  region?: string;
-  industry?: string;
-  objective?: string;
-  landingPageUrl?: string;
-  firstSeen?: string;
-  lastSeen?: string;
+  videoUrlNoWaterMark?: string;
+  coverUrl?: string;
+  dynamicCoverUrl?: string;
+  text?: string;                    // Caption/description
+  diggCount?: number;               // Likes
+  commentCount?: number;
+  shareCount?: number;
+  playCount?: number;
+  collectCount?: number;            // Saves
+  createTime?: number;              // Unix timestamp
+  createTimeISO?: string;
+  duration?: number;                // Video length in seconds
+  hashtags?: Array<{ name: string }>;
+  author?: {
+    id?: string;
+    uniqueId?: string;              // Username
+    nickname?: string;              // Display name
+    avatarThumb?: string;
+    signature?: string;             // Bio
+    verified?: boolean;
+    followerCount?: number;
+    heartCount?: number;
+  };
+  music?: {
+    id?: string;
+    title?: string;
+    authorName?: string;
+    playUrl?: string;
+  };
+  locationCreated?: string;
 }
 
 /**
- * Start a TikTok Creative Center scrape
- *
- * Note: Parameter names match TikTok Creative Center's Top Ads dashboard filters
+ * Start a TikTok content scrape for viral/trending videos
  */
 export async function startTikTokScrape(input: TikTokScrapeInput): Promise<string> {
-  // Map our orderBy to TikTok's sort options
-  const sortByMap: Record<string, string> = {
-    popular: 'reach', // Default - sort by reach/popularity
-    ctr: 'ctr',       // Click-through rate
-    cvr: 'cvr',       // Conversion rate
-    impression: 'reach',
-    like: 'like',
+  const actorInput: Record<string, unknown> = {
+    resultsPerPage: input.maxItems || 50,
+    shouldDownloadVideos: input.downloadVideos || false,
+    shouldDownloadCovers: input.downloadCovers || false,
   };
 
-  const actorInput = {
-    // Search keyword
-    keyword: input.keyword || '',
+  // Add hashtags if provided
+  if (input.hashtags && input.hashtags.length > 0) {
+    actorInput.hashtags = input.hashtags.map(h => h.replace('#', ''));
+  }
 
-    // Region filter (country code)
-    region: input.region || 'US',
+  // Add profiles if provided
+  if (input.profiles && input.profiles.length > 0) {
+    actorInput.profiles = input.profiles.map(p => p.replace('@', ''));
+  }
 
-    // Time period in days (7, 30, or 180)
-    period: parseInt(input.period || '30', 10),
+  // Add search queries if provided
+  if (input.searchQueries && input.searchQueries.length > 0) {
+    actorInput.searchQueries = input.searchQueries;
+  }
 
-    // Sort method
-    sortBy: sortByMap[input.orderBy || 'popular'] || 'reach',
+  // Add video URLs if provided
+  if (input.videoUrls && input.videoUrls.length > 0) {
+    actorInput.postURLs = input.videoUrls;
+  }
 
-    // Ad format filter
-    adFormat: input.adFormat === 'ALL' ? '' : (input.adFormat || ''),
-
-    // Limit results
-    limit: input.maxItems || 100,
-
-    // Include detailed analytics (second-by-second metrics)
-    include_analytics: true,
-  };
+  // Sort option
+  if (input.sortBy) {
+    const sortMap: Record<string, number> = {
+      latest: 0,
+      oldest: 1,
+      popular: 2,
+    };
+    actorInput.oldestFirst = sortMap[input.sortBy] || 0;
+  }
 
   const { data } = await apifyClient.runActor(TIKTOK_ACTOR_ID, actorInput);
   return data.id;
@@ -89,7 +111,12 @@ export async function getTikTokScrapeResults(runId: string): Promise<{
   ads: NewAd[];
   advertisers: NewAdvertiser[];
 }> {
-  const { status, results } = await apifyClient.waitForRunAndGetResults<TikTokAdResult>(runId);
+  const { status, results } = await apifyClient.waitForRunAndGetResults<TikTokVideoResult>(runId);
+
+  console.log('TikTok scrape results count:', results.length);
+  if (results.length > 0) {
+    console.log('Sample result:', JSON.stringify(results[0], null, 2).substring(0, 500));
+  }
 
   if (status !== 'completed' || results.length === 0) {
     return { status, ads: [], advertisers: [] };
@@ -100,68 +127,67 @@ export async function getTikTokScrapeResults(runId: string): Promise<{
   const ads: NewAd[] = [];
 
   for (const result of results) {
-    // Create or update advertiser
-    const advertiserId = result.advertiserId || `tiktok_${nanoid(8)}`;
-    if (result.advertiserName && !advertiserMap.has(advertiserId)) {
+    // Create advertiser from author info
+    const author = result.author;
+    const advertiserId = author?.id || author?.uniqueId || `tiktok_${nanoid(8)}`;
+
+    if (author?.uniqueId && !advertiserMap.has(advertiserId)) {
       advertiserMap.set(advertiserId, {
         id: advertiserId,
         platform: 'tiktok',
-        name: result.advertiserName,
-        pageUrl: null,
+        name: author.nickname || author.uniqueId,
+        pageUrl: `https://tiktok.com/@${author.uniqueId}`,
         firstSeenAt: new Date().toISOString(),
         lastScrapedAt: new Date().toISOString(),
         isTracked: false,
       });
     }
 
-    // Determine media type
-    let mediaType: 'image' | 'video' | 'carousel' = 'video';
+    // Media URLs
     const mediaUrls: string[] = [];
+    if (result.videoUrlNoWaterMark) mediaUrls.push(result.videoUrlNoWaterMark);
+    else if (result.videoUrl) mediaUrls.push(result.videoUrl);
+    if (result.webVideoUrl) mediaUrls.push(result.webVideoUrl);
 
-    if (result.videoUrl) {
-      mediaUrls.push(result.videoUrl);
-    }
-    if (result.videoPreviewUrl) {
-      mediaUrls.push(result.videoPreviewUrl);
-    }
-
-    // Calculate days running if we have date info
+    // Calculate days since posted
     let daysRunning: number | undefined;
-    if (result.firstSeen) {
-      const startDate = new Date(result.firstSeen);
-      const endDate = result.lastSeen ? new Date(result.lastSeen) : new Date();
+    if (result.createTime) {
+      const createDate = new Date(result.createTime * 1000);
       daysRunning = Math.ceil(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        (Date.now() - createDate.getTime()) / (1000 * 60 * 60 * 24)
       );
     }
 
     // Build body text from caption and hashtags
-    let bodyText = result.caption || '';
+    let bodyText = result.text || '';
     if (result.hashtags && result.hashtags.length > 0) {
-      bodyText += '\n\n' + result.hashtags.map((h) => `#${h}`).join(' ');
+      const tags = result.hashtags.map(h => `#${h.name}`).join(' ');
+      if (!bodyText.includes(tags)) {
+        bodyText += '\n\n' + tags;
+      }
     }
 
     ads.push({
       id: nanoid(),
       platform: 'tiktok',
-      advertiserId: result.advertiserName ? advertiserId : null,
+      advertiserId: author?.uniqueId ? advertiserId : null,
       externalId: result.id,
-      headline: null, // TikTok ads don't have headlines
+      headline: author?.nickname || null,  // Use creator name as "headline"
       bodyText: bodyText || null,
-      ctaText: result.objective || null,
-      landingUrl: result.landingPageUrl || null,
-      mediaType,
+      ctaText: result.music?.title ? `Music: ${result.music.title}` : null,
+      landingUrl: result.webVideoUrl || `https://tiktok.com/@${author?.uniqueId}/video/${result.id}`,
+      mediaType: 'video',
       mediaUrls: JSON.stringify(mediaUrls),
-      thumbnailUrl: result.thumbnailUrl || null,
-      impressionsMin: result.impressions || null,
-      impressionsMax: result.impressions || null,
-      likes: result.likes || null,
-      comments: result.comments || null,
-      shares: result.shares || null,
+      thumbnailUrl: result.coverUrl || result.dynamicCoverUrl || null,
+      impressionsMin: result.playCount || null,
+      impressionsMax: result.playCount || null,
+      likes: result.diggCount || null,
+      comments: result.commentCount || null,
+      shares: result.shareCount || null,
       daysRunning: daysRunning || null,
-      countryTargeting: result.region ? JSON.stringify([result.region]) : null,
-      firstSeenAt: result.firstSeen || null,
-      lastSeenAt: result.lastSeen || null,
+      countryTargeting: result.locationCreated ? JSON.stringify([result.locationCreated]) : null,
+      firstSeenAt: result.createTimeISO || null,
+      lastSeenAt: null,
       scrapedAt: new Date().toISOString(),
       analysis: null,
     });
