@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,8 +59,7 @@ function getPlatformBadge(platform: string) {
   }
 }
 
-export default function CreatorsPage() {
-  const router = useRouter();
+function CreatorsContent() {
   const searchParams = useSearchParams();
 
   const [creators, setCreators] = useState<Creator[]>([]);
@@ -328,5 +327,25 @@ export default function CreatorsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CreatorsPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Creators</h1>
+          <p className="text-muted-foreground mt-1">Loading...</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="h-48 bg-muted rounded-lg animate-pulse" />
+          ))}
+        </div>
+      </div>
+    }>
+      <CreatorsContent />
+    </Suspense>
   );
 }
