@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
-import { db } from '@/lib/db/client';
+import { db, ensureInitialized } from '@/lib/db/client';
 import { scrapeJobs, ads, advertisers } from '@/lib/db/schema';
 import { startMetaScrape, getMetaScrapeResults } from '@/lib/apify/meta-scraper';
 import { startTikTokScrape, getTikTokScrapeResults } from '@/lib/apify/tiktok-scraper';
 import { eq } from 'drizzle-orm';
 
+export const maxDuration = 300; // 5 minutes for Vercel Pro
+
 export async function POST(request: NextRequest) {
   try {
+    await ensureInitialized();
+    
     const body = await request.json();
     const { platform, searchType, query, filters } = body;
 
@@ -35,28 +39,44 @@ export async function POST(request: NextRequest) {
     // Start the appropriate scraper
     let runId: string;
 
-    if (platform === 'meta') {
-      runId = await startMetaScrape({
-        searchTerm: searchType === 'keyword' ? query : undefined,
-        pageIds: searchType === 'advertiser' ? [query] : undefined,
-        country: filters?.country || 'US',
-        mediaType: filters?.mediaType || 'ALL',
-        activeStatus: filters?.activeOnly ? 'ACTIVE' : 'ALL',
-        maxItems: filters?.maxItems || 100,
-      });
-    } else if (platform === 'tiktok') {
-      runId = await startTikTokScrape({
-        keyword: query,
-        region: filters?.country || 'US',
-        period: filters?.period || '30',
-        orderBy: filters?.orderBy || 'popular',
-        adFormat: filters?.adFormat || 'ALL',
-        maxItems: filters?.maxItems || 100,
-      });
-    } else {
+    try {
+      if (platform === 'meta') {
+        runId = await startMetaScrape({
+          searchTerm: searchType === 'keyword' ? query : undefined,
+          pageIds: searchType === 'advertiser' ? [query] : undefined,
+          country: filters?.country || 'US',
+          mediaType: filters?.mediaType || 'ALL',
+          activeStatus: filters?.activeOnly ? 'ACTIVE' : 'ALL',
+          maxItems: filters?.maxItems || 100,
+        });
+      } else if (platform === 'tiktok') {
+        runId = await startTikTokScrape({
+          keyword: query,
+          region: filters?.country || 'US',
+          period: filters?.period || '30',
+          orderBy: filters?.orderBy || 'popular',
+          adFormat: filters?.adFormat || 'ALL',
+          maxItems: filters?.maxItems || 100,
+        });
+      } else {
+        return NextResponse.json(
+          { error: 'Invalid platform. Use "meta" or "tiktok"' },
+          { status: 400 }
+        );
+      }
+    } catch (err) {
+      await db
+        .update(scrapeJobs)
+        .set({ 
+          status: 'failed', 
+          error: err instanceof Error ? err.message : 'Failed to start scraper',
+          completedAt: new Date().toISOString()
+        })
+        .where(eq(scrapeJobs.id, jobId));
+      
       return NextResponse.json(
-        { error: 'Invalid platform. Use "meta" or "tiktok"' },
-        { status: 400 }
+        { error: 'Failed to start scraper. Check your APIFY_TOKEN.' },
+        { status: 500 }
       );
     }
 
@@ -66,7 +86,7 @@ export async function POST(request: NextRequest) {
       .set({ status: 'running', apifyRunId: runId })
       .where(eq(scrapeJobs.id, jobId));
 
-    // Start background processing
+    // Start background processing (non-blocking)
     processResults(jobId, platform, runId).catch(console.error);
 
     return NextResponse.json({
@@ -126,16 +146,18 @@ async function processResults(jobId: string, platform: string, runId: string) {
     // Insert ads (check for duplicates by external ID)
     let insertedCount = 0;
     for (const ad of result.ads) {
-      const existing = await db
-        .select()
-        .from(ads)
-        .where(eq(ads.externalId, ad.externalId || ''))
-        .limit(1);
+      if (ad.externalId) {
+        const existing = await db
+          .select()
+          .from(ads)
+          .where(eq(ads.externalId, ad.externalId))
+          .limit(1);
 
-      if (existing.length === 0) {
-        await db.insert(ads).values(ad);
-        insertedCount++;
+        if (existing.length > 0) continue;
       }
+      
+      await db.insert(ads).values(ad);
+      insertedCount++;
     }
 
     // Update job status

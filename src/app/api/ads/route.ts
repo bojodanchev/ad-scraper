@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db/client';
+import { db, ensureInitialized } from '@/lib/db/client';
 import { ads, advertisers } from '@/lib/db/schema';
-import { eq, desc, and, like, sql } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
+    await ensureInitialized();
+    
     const { searchParams } = new URL(request.url);
     const platform = searchParams.get('platform');
     const mediaType = searchParams.get('mediaType');

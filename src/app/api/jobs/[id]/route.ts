@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db/client';
+import { db, ensureInitialized } from '@/lib/db/client';
 import { scrapeJobs } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -8,6 +8,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await ensureInitialized();
+    
     const { id } = await params;
 
     const jobs = await db

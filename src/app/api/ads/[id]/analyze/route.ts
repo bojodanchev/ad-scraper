@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db/client';
+import { db, ensureInitialized } from '@/lib/db/client';
 import { ads } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { getAnalyzer } from '@/lib/analysis/gemini';
+
+export const maxDuration = 120; // 2 minutes for video analysis
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await ensureInitialized();
+    
     const { id } = await params;
 
     // Get the ad

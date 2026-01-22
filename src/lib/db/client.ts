@@ -1,17 +1,18 @@
-import Database from 'better-sqlite3';
-import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import { createClient } from '@libsql/client';
+import { drizzle } from 'drizzle-orm/libsql';
 import * as schema from './schema';
-import path from 'path';
 
-let sqlite: Database.Database | null = null;
-let drizzleDb: BetterSQLite3Database<typeof schema> | null = null;
+// Create Turso client
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL || 'file:./ads.db',
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
 
-function getDbPath() {
-  return process.env.DATABASE_URL || path.join(process.cwd(), 'ads.db');
-}
+export const db = drizzle(client, { schema });
 
-function initializeDatabase(sqlite: Database.Database) {
-  sqlite.exec(`
+// Initialize tables
+export async function initializeDatabase() {
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS advertisers (
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
@@ -20,8 +21,10 @@ function initializeDatabase(sqlite: Database.Database) {
       first_seen_at TEXT,
       last_scraped_at TEXT,
       is_tracked INTEGER DEFAULT 0
-    );
+    )
+  `);
 
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS ads (
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
@@ -45,8 +48,10 @@ function initializeDatabase(sqlite: Database.Database) {
       last_seen_at TEXT,
       scraped_at TEXT,
       analysis TEXT
-    );
+    )
+  `);
 
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS scrape_jobs (
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
@@ -58,49 +63,39 @@ function initializeDatabase(sqlite: Database.Database) {
       started_at TEXT,
       completed_at TEXT,
       error TEXT
-    );
+    )
+  `);
 
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS collections (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
       created_at TEXT
-    );
+    )
+  `);
 
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS collection_ads (
       collection_id TEXT NOT NULL REFERENCES collections(id),
       ad_id TEXT NOT NULL REFERENCES ads(id),
       notes TEXT,
       added_at TEXT,
       PRIMARY KEY (collection_id, ad_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_ads_platform ON ads(platform);
-    CREATE INDEX IF NOT EXISTS idx_ads_advertiser ON ads(advertiser_id);
-    CREATE INDEX IF NOT EXISTS idx_ads_scraped_at ON ads(scraped_at);
-    CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status);
+    )
   `);
+
+  await client.execute(`CREATE INDEX IF NOT EXISTS idx_ads_platform ON ads(platform)`);
+  await client.execute(`CREATE INDEX IF NOT EXISTS idx_ads_advertiser ON ads(advertiser_id)`);
+  await client.execute(`CREATE INDEX IF NOT EXISTS idx_ads_scraped_at ON ads(scraped_at)`);
+  await client.execute(`CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status)`);
 }
 
-export function getDb(): BetterSQLite3Database<typeof schema> {
-  if (!drizzleDb) {
-    const dbPath = getDbPath();
-    sqlite = new Database(dbPath);
-    sqlite.pragma('journal_mode = WAL');
-    initializeDatabase(sqlite);
-    drizzleDb = drizzle(sqlite, { schema });
+// Auto-initialize on first import
+let initialized = false;
+export async function ensureInitialized() {
+  if (!initialized) {
+    await initializeDatabase();
+    initialized = true;
   }
-  return drizzleDb;
 }
-
-// Export a proxy that lazily initializes the database
-export const db = new Proxy({} as BetterSQLite3Database<typeof schema>, {
-  get(_, prop) {
-    const database = getDb();
-    const value = database[prop as keyof typeof database];
-    if (typeof value === 'function') {
-      return value.bind(database);
-    }
-    return value;
-  },
-});
