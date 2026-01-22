@@ -58,16 +58,78 @@ export interface MetaAdResult {
 }
 
 /**
+ * Build a Facebook Ads Library search URL from parameters
+ */
+function buildFbAdsLibraryUrl(input: MetaScrapeInput): string {
+  const baseUrl = 'https://www.facebook.com/ads/library/';
+  const params = new URLSearchParams();
+
+  // Map our activeStatus to FB's active_status
+  const activeStatusMap: Record<string, string> = {
+    ACTIVE: 'active',
+    INACTIVE: 'inactive',
+    ALL: 'all',
+  };
+  params.set('active_status', activeStatusMap[input.activeStatus || 'ACTIVE'] || 'active');
+
+  // Ad type - always 'all' for now
+  params.set('ad_type', 'all');
+
+  // Country
+  params.set('country', input.country || 'US');
+
+  // Search term
+  if (input.searchTerm) {
+    params.set('q', input.searchTerm);
+    params.set('search_type', 'keyword_unordered');
+  }
+
+  // Map our mediaType to FB's media_type
+  const mediaTypeMap: Record<string, string> = {
+    ALL: 'all',
+    IMAGE: 'image',
+    VIDEO: 'video',
+    MEME: 'meme',
+    NONE: 'none',
+  };
+  params.set('media_type', mediaTypeMap[input.mediaType || 'ALL'] || 'all');
+
+  return `${baseUrl}?${params.toString()}`;
+}
+
+/**
  * Start a Meta Ads Library scrape
  */
 export async function startMetaScrape(input: MetaScrapeInput): Promise<string> {
+  // Build URLs array based on input
+  const urls: Array<{ url: string } | string> = [];
+
+  // If searching by keyword, build a search URL
+  if (input.searchTerm) {
+    urls.push({ url: buildFbAdsLibraryUrl(input) });
+  }
+
+  // If searching by page IDs, add page URLs
+  if (input.pageIds && input.pageIds.length > 0) {
+    for (const pageId of input.pageIds) {
+      // Handle both page IDs and full URLs
+      if (pageId.startsWith('http')) {
+        urls.push({ url: pageId });
+      } else {
+        urls.push({ url: `https://www.facebook.com/${pageId}` });
+      }
+    }
+  }
+
   const actorInput = {
-    searchTerms: input.searchTerm ? [input.searchTerm] : undefined,
-    pageIds: input.pageIds,
-    countryCode: input.country || 'US',
-    mediaType: input.mediaType || 'ALL',
-    adActiveStatus: input.activeStatus || 'ACTIVE',
-    maxItems: input.maxItems || 100,
+    urls,
+    count: input.maxItems || 100,
+    'scrapePageAds.activeStatus': input.activeStatus?.toLowerCase() || 'active',
+    proxy: {
+      useApifyProxy: true,
+      apifyProxyGroups: ['RESIDENTIAL'],
+      apifyProxyCountry: input.country || 'US',
+    },
   };
 
   const { data } = await apifyClient.runActor(META_ACTOR_ID, actorInput);

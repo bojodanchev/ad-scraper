@@ -41,16 +41,40 @@ export interface TikTokAdResult {
 
 /**
  * Start a TikTok Creative Center scrape
+ *
+ * Note: Parameter names match TikTok Creative Center's Top Ads dashboard filters
  */
 export async function startTikTokScrape(input: TikTokScrapeInput): Promise<string> {
+  // Map our orderBy to TikTok's sort options
+  const sortByMap: Record<string, string> = {
+    popular: 'reach', // Default - sort by reach/popularity
+    ctr: 'ctr',       // Click-through rate
+    cvr: 'cvr',       // Conversion rate
+    impression: 'reach',
+    like: 'like',
+  };
+
   const actorInput = {
-    keyword: input.keyword,
+    // Search keyword
+    keyword: input.keyword || '',
+
+    // Region filter (country code)
     region: input.region || 'US',
-    period: input.period || '30',
-    orderBy: input.orderBy || 'popular',
-    adFormat: input.adFormat || 'ALL',
-    maxItems: input.maxItems || 100,
-    includeDetails: true,
+
+    // Time period in days (7, 30, or 180)
+    period: parseInt(input.period || '30', 10),
+
+    // Sort method
+    sortBy: sortByMap[input.orderBy || 'popular'] || 'reach',
+
+    // Ad format filter
+    adFormat: input.adFormat === 'ALL' ? '' : (input.adFormat || ''),
+
+    // Limit results
+    limit: input.maxItems || 100,
+
+    // Include detailed analytics (second-by-second metrics)
+    include_analytics: true,
   };
 
   const { data } = await apifyClient.runActor(TIKTOK_ACTOR_ID, actorInput);
