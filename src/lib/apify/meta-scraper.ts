@@ -123,7 +123,8 @@ export async function startMetaScrape(input: MetaScrapeInput): Promise<string> {
 
   const actorInput = {
     urls,
-    count: input.maxItems || 100,
+    // Meta scraper requires minimum 10 items
+    count: Math.max(input.maxItems || 100, 10),
     'scrapePageAds.activeStatus': input.activeStatus?.toLowerCase() || 'active',
     proxy: {
       useApifyProxy: true,

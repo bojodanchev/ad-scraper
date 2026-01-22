@@ -1,18 +1,53 @@
-import { createClient } from '@libsql/client';
-import { drizzle } from 'drizzle-orm/libsql';
+import { createClient, Client } from '@libsql/client';
+import { drizzle, LibSQLDatabase } from 'drizzle-orm/libsql';
 import * as schema from './schema';
 
-// Create Turso client
-const client = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:./ads.db',
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+// Lazy client initialization
+let client: Client | null = null;
+let dbInstance: LibSQLDatabase<typeof schema> | null = null;
 
-export const db = drizzle(client, { schema });
+function getClient(): Client {
+  if (!client) {
+    const url = process.env.TURSO_DATABASE_URL;
+    const authToken = process.env.TURSO_AUTH_TOKEN;
+
+    if (!url) {
+      throw new Error('TURSO_DATABASE_URL is not configured');
+    }
+
+    console.log('Creating Turso client with URL:', url.substring(0, 30) + '...');
+
+    client = createClient({
+      url: url.trim(), // Remove any whitespace/newlines
+      authToken: authToken?.trim(),
+    });
+  }
+  return client;
+}
+
+function getDb(): LibSQLDatabase<typeof schema> {
+  if (!dbInstance) {
+    dbInstance = drizzle(getClient(), { schema });
+  }
+  return dbInstance;
+}
+
+// Proxy for lazy initialization
+export const db = new Proxy({} as LibSQLDatabase<typeof schema>, {
+  get(_, prop) {
+    const realDb = getDb();
+    const value = (realDb as unknown as Record<string | symbol, unknown>)[prop];
+    if (typeof value === 'function') {
+      return value.bind(realDb);
+    }
+    return value;
+  },
+});
 
 // Initialize tables
 export async function initializeDatabase() {
-  await client.execute(`
+  const c = getClient();
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS advertisers (
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
@@ -24,7 +59,7 @@ export async function initializeDatabase() {
     )
   `);
 
-  await client.execute(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS ads (
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
@@ -51,7 +86,7 @@ export async function initializeDatabase() {
     )
   `);
 
-  await client.execute(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS scrape_jobs (
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
@@ -66,7 +101,7 @@ export async function initializeDatabase() {
     )
   `);
 
-  await client.execute(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS collections (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -75,7 +110,7 @@ export async function initializeDatabase() {
     )
   `);
 
-  await client.execute(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS collection_ads (
       collection_id TEXT NOT NULL REFERENCES collections(id),
       ad_id TEXT NOT NULL REFERENCES ads(id),
@@ -85,10 +120,10 @@ export async function initializeDatabase() {
     )
   `);
 
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_ads_platform ON ads(platform)`);
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_ads_advertiser ON ads(advertiser_id)`);
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_ads_scraped_at ON ads(scraped_at)`);
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_ads_platform ON ads(platform)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_ads_advertiser ON ads(advertiser_id)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_ads_scraped_at ON ads(scraped_at)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status)`);
 }
 
 // Auto-initialize on first import
