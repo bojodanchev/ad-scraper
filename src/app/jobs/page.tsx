@@ -26,42 +26,29 @@ function JobsContent() {
   const [loading, setLoading] = useState(true);
 
   const loadJobs = async () => {
-    // In a real app, we'd have a /api/jobs endpoint
-    // For now, we'll just poll the highlighted job if there is one
-    if (highlightId) {
-      try {
-        const res = await fetch(`/api/jobs/${highlightId}`);
-        if (res.ok) {
-          const job = await res.json();
-          setJobs([job]);
-        }
-      } catch (error) {
-        console.error('Failed to load job:', error);
+    try {
+      // Load all jobs from the database
+      const res = await fetch('/api/jobs');
+      if (res.ok) {
+        const data = await res.json();
+        setJobs(data.jobs || []);
       }
+    } catch (error) {
+      console.error('Failed to load jobs:', error);
     }
     setLoading(false);
   };
 
   useEffect(() => {
     loadJobs();
-    
-    // Poll for updates if there's a running job
+
+    // Poll for updates every 5 seconds if there's a running job
     const interval = setInterval(() => {
-      if (jobs.some(j => j.status === 'running' || j.status === 'pending')) {
-        loadJobs();
-      }
-    }, 3000);
+      loadJobs();
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [highlightId]);
-
-  // Re-poll when jobs change status
-  useEffect(() => {
-    if (jobs.some(j => j.status === 'running' || j.status === 'pending')) {
-      const timeout = setTimeout(loadJobs, 3000);
-      return () => clearTimeout(timeout);
-    }
-  }, [jobs]);
+  }, []);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
