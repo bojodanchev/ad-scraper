@@ -17,6 +17,9 @@ export interface TikTokScrapeInput {
   sortBy?: 'latest' | 'oldest' | 'popular';
   maxItems?: number;
 
+  // Time period filter (in days)
+  timePeriodDays?: number;    // Filter to content within last N days
+
   // Download options
   downloadVideos?: boolean;
   downloadCovers?: boolean;
@@ -105,21 +108,38 @@ export async function startTikTokScrape(input: TikTokScrapeInput): Promise<strin
 
 /**
  * Get results from a completed TikTok scrape
+ * @param runId - Apify run ID
+ * @param timePeriodDays - Optional filter to only include content from last N days
  */
-export async function getTikTokScrapeResults(runId: string): Promise<{
+export async function getTikTokScrapeResults(runId: string, timePeriodDays?: number): Promise<{
   status: string;
   ads: NewAd[];
   advertisers: NewAdvertiser[];
 }> {
-  const { status, results } = await apifyClient.waitForRunAndGetResults<TikTokVideoResult>(runId);
+  const { status, results: rawResults } = await apifyClient.waitForRunAndGetResults<TikTokVideoResult>(runId);
 
-  console.log('TikTok scrape results count:', results.length);
-  if (results.length > 0) {
-    console.log('Sample result:', JSON.stringify(results[0], null, 2).substring(0, 500));
+  console.log('TikTok scrape raw results count:', rawResults.length);
+  if (rawResults.length > 0) {
+    console.log('Sample result:', JSON.stringify(rawResults[0], null, 2).substring(0, 500));
   }
 
-  if (status !== 'completed' || results.length === 0) {
+  if (status !== 'completed' || rawResults.length === 0) {
     return { status, ads: [], advertisers: [] };
+  }
+
+  // Filter by time period if specified
+  let results = rawResults;
+  if (timePeriodDays) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - timePeriodDays);
+    const cutoffTimestamp = Math.floor(cutoffDate.getTime() / 1000);
+
+    results = rawResults.filter(r => {
+      if (!r.createTime) return false;
+      return r.createTime >= cutoffTimestamp;
+    });
+
+    console.log(`TikTok filtered to last ${timePeriodDays} days: ${results.length}/${rawResults.length} results`);
   }
 
   // Normalize results to our schema

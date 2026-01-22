@@ -54,6 +54,9 @@ function AdsContent() {
   // Exclude DCO ads
   const [excludeDco, setExcludeDco] = useState(false);
 
+  // Time period filter for when content was first seen
+  const [timePeriod, setTimePeriod] = useState('all');
+
   const loadAds = async () => {
     setLoading(true);
     try {
@@ -69,6 +72,7 @@ function AdsContent() {
         params.set('maxDaysRunning', daysRange[1].toString());
       }
       if (excludeDco) params.set('excludeDco', 'true');
+      if (timePeriod !== 'all') params.set('timePeriod', timePeriod);
       params.set('limit', limit.toString());
       params.set('offset', offset.toString());
 
@@ -85,7 +89,7 @@ function AdsContent() {
 
   useEffect(() => {
     loadAds();
-  }, [platform, mediaType, hasAnalysis, offset, sortBy, sortOrder, daysFilterEnabled, daysRange, excludeDco]);
+  }, [platform, mediaType, hasAnalysis, offset, sortBy, sortOrder, daysFilterEnabled, daysRange, excludeDco, timePeriod]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,6 +168,10 @@ function AdsContent() {
               <SelectContent>
                 <SelectItem value="scrapedAt">Date Scraped</SelectItem>
                 <SelectItem value="daysRunning">Days Running</SelectItem>
+                <SelectItem value="likes">Most Likes</SelectItem>
+                <SelectItem value="views">Most Views</SelectItem>
+                <SelectItem value="comments">Most Comments</SelectItem>
+                <SelectItem value="shares">Most Shares</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -218,6 +226,23 @@ function AdsContent() {
           <Label htmlFor="excludeDco" className="text-xs text-muted-foreground cursor-pointer">
             Hide template ads
           </Label>
+        </div>
+
+        {/* Time Period Filter */}
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Posted Within</Label>
+          <Select value={timePeriod} onValueChange={(v) => { setTimePeriod(v); setOffset(0); }}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Time</SelectItem>
+              <SelectItem value="48h">Last 48 Hours</SelectItem>
+              <SelectItem value="7d">Last 7 Days</SelectItem>
+              <SelectItem value="30d">Last 30 Days</SelectItem>
+              <SelectItem value="90d">Last 90 Days</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

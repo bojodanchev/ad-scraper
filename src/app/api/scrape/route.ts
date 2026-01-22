@@ -9,12 +9,25 @@ import { eq } from 'drizzle-orm';
 
 export const maxDuration = 300; // 5 minutes for Vercel Pro
 
+// Convert time period string to days
+function timePeriodToDays(timePeriod?: string): number | undefined {
+  if (!timePeriod) return undefined;
+  const mapping: Record<string, number> = {
+    '48h': 2,
+    '7d': 7,
+    '30d': 30,
+    '90d': 90,
+  };
+  return mapping[timePeriod];
+}
+
 export async function POST(request: NextRequest) {
   try {
     await ensureInitialized();
 
     const body = await request.json();
     const { platform, searchType, query, filters } = body;
+    const timePeriodDays = timePeriodToDays(filters?.timePeriod);
 
     if (!platform || !query) {
       return NextResponse.json(
@@ -97,7 +110,7 @@ export async function POST(request: NextRequest) {
       .where(eq(scrapeJobs.id, jobId));
 
     // Start background processing (non-blocking)
-    processResults(jobId, platform, runId).catch(console.error);
+    processResults(jobId, platform, runId, timePeriodDays).catch(console.error);
 
     return NextResponse.json({
       jobId,
@@ -113,16 +126,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processResults(jobId: string, platform: string, runId: string) {
+async function processResults(jobId: string, platform: string, runId: string, timePeriodDays?: number) {
   try {
     let result;
 
     if (platform === 'meta') {
+      // Meta Ads Library doesn't support time period filtering in results
+      // (filtering is done at scrape time by activeStatus)
       result = await getMetaScrapeResults(runId);
     } else if (platform === 'tiktok') {
-      result = await getTikTokScrapeResults(runId);
+      result = await getTikTokScrapeResults(runId, timePeriodDays);
     } else if (platform === 'instagram') {
-      result = await getInstagramScrapeResults(runId);
+      result = await getInstagramScrapeResults(runId, timePeriodDays);
     } else {
       throw new Error(`Unknown platform: ${platform}`);
     }

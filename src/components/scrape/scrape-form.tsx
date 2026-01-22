@@ -16,6 +16,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Platform = 'meta' | 'tiktok' | 'instagram';
 type SearchType = 'keyword' | 'hashtag' | 'profile' | 'advertiser';
+type TimePeriod = 'all' | '48h' | '7d' | '30d' | '90d';
+
+// Time period options for filtering viral content
+const timePeriodOptions: { value: TimePeriod; label: string; days: number | null }[] = [
+  { value: 'all', label: 'All Time', days: null },
+  { value: '48h', label: 'Last 48 Hours', days: 2 },
+  { value: '7d', label: 'Last 7 Days', days: 7 },
+  { value: '30d', label: 'Last 30 Days', days: 30 },
+  { value: '90d', label: 'Last 90 Days', days: 90 },
+];
 
 // Platform-specific search type options
 const searchTypeOptions: Record<Platform, { value: SearchType; label: string }[]> = {
@@ -47,6 +57,7 @@ export function ScrapeForm() {
   const [mediaType, setMediaType] = useState('ALL');
   const [maxItems, setMaxItems] = useState('50');
   const [sortBy, setSortBy] = useState('popular');
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('all');
 
   // Reset search type when platform changes
   const handlePlatformChange = (newPlatform: Platform) => {
@@ -90,6 +101,7 @@ export function ScrapeForm() {
             maxItems: parseInt(maxItems),
             activeOnly: true,
             sortBy, // For TikTok/Instagram
+            timePeriod: timePeriod !== 'all' ? timePeriod : undefined,
           },
         }),
       });
@@ -213,6 +225,23 @@ export function ScrapeForm() {
                 </Select>
               </div>
             )}
+
+            {/* Time Period - For all platforms */}
+            <div className="space-y-2">
+              <Label>Time Period</Label>
+              <Select value={timePeriod} onValueChange={(v) => setTimePeriod(v as TimePeriod)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {timePeriodOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             {/* Media Type - Only for Meta */}
             {platform === 'meta' && (

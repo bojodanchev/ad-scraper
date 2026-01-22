@@ -17,6 +17,9 @@ export interface InstagramScrapeInput {
   // Filters
   resultsLimit?: number;
   searchLimit?: number;              // Limit search results
+
+  // Time period filter (in days)
+  timePeriodDays?: number;           // Filter to content within last N days
 }
 
 // Output structure from apify/instagram-scraper
@@ -89,21 +92,38 @@ export async function startInstagramScrape(input: InstagramScrapeInput): Promise
 
 /**
  * Get results from a completed Instagram scrape
+ * @param runId - Apify run ID
+ * @param timePeriodDays - Optional filter to only include content from last N days
  */
-export async function getInstagramScrapeResults(runId: string): Promise<{
+export async function getInstagramScrapeResults(runId: string, timePeriodDays?: number): Promise<{
   status: string;
   ads: NewAd[];
   advertisers: NewAdvertiser[];
 }> {
-  const { status, results } = await apifyClient.waitForRunAndGetResults<InstagramPostResult>(runId);
+  const { status, results: rawResults } = await apifyClient.waitForRunAndGetResults<InstagramPostResult>(runId);
 
-  console.log('Instagram scrape results count:', results.length);
-  if (results.length > 0) {
-    console.log('Sample result:', JSON.stringify(results[0], null, 2).substring(0, 500));
+  console.log('Instagram scrape raw results count:', rawResults.length);
+  if (rawResults.length > 0) {
+    console.log('Sample result:', JSON.stringify(rawResults[0], null, 2).substring(0, 500));
   }
 
-  if (status !== 'completed' || results.length === 0) {
+  if (status !== 'completed' || rawResults.length === 0) {
     return { status, ads: [], advertisers: [] };
+  }
+
+  // Filter by time period if specified
+  let results = rawResults;
+  if (timePeriodDays) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - timePeriodDays);
+
+    results = rawResults.filter(r => {
+      if (!r.timestamp) return false;
+      const postDate = new Date(r.timestamp);
+      return postDate >= cutoffDate;
+    });
+
+    console.log(`Instagram filtered to last ${timePeriodDays} days: ${results.length}/${rawResults.length} results`);
   }
 
   // Normalize results to our schema

@@ -26,6 +26,9 @@ export async function GET(request: NextRequest) {
     // Exclude DCO ads (ads with template variables like {{product.name}})
     const excludeDco = searchParams.get('excludeDco') === 'true';
 
+    // Time period filter (when content was first seen/posted)
+    const timePeriod = searchParams.get('timePeriod');
+
     // Build conditions
     const conditions = [];
 
@@ -70,20 +73,62 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Time period filter - filter by firstSeenAt (when content was posted)
+    if (timePeriod) {
+      const timePeriodDays: Record<string, number> = {
+        '48h': 2,
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+      };
+      const days = timePeriodDays[timePeriod];
+      if (days) {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        const cutoffIso = cutoffDate.toISOString();
+        conditions.push(
+          sql`${ads.firstSeenAt} IS NOT NULL AND ${ads.firstSeenAt} >= ${cutoffIso}`
+        );
+      }
+    }
+
     // Determine sort column and direction
     // For daysRunning, use COALESCE to handle NULLs (put them at the end)
     const orderFn = sortOrder === 'asc' ? asc : desc;
 
-    // Build order by clause - handle NULL values for daysRunning
+    // Build order by clause - handle NULL values for various columns
     let orderByClause;
-    if (sortBy === 'daysRunning') {
-      // Use COALESCE to put NULLs at the end (treat as 0 for asc, 9999 for desc)
-      const nullDefault = sortOrder === 'asc' ? 99999 : 0;
-      orderByClause = sortOrder === 'asc'
-        ? sql`COALESCE(${ads.daysRunning}, ${nullDefault}) ASC`
-        : sql`COALESCE(${ads.daysRunning}, ${nullDefault}) DESC`;
-    } else {
-      orderByClause = orderFn(ads.scrapedAt);
+    const nullDefault = sortOrder === 'asc' ? 99999999 : 0;
+
+    switch (sortBy) {
+      case 'daysRunning':
+        orderByClause = sortOrder === 'asc'
+          ? sql`COALESCE(${ads.daysRunning}, ${nullDefault}) ASC`
+          : sql`COALESCE(${ads.daysRunning}, ${nullDefault}) DESC`;
+        break;
+      case 'likes':
+        orderByClause = sortOrder === 'asc'
+          ? sql`COALESCE(${ads.likes}, ${nullDefault}) ASC`
+          : sql`COALESCE(${ads.likes}, ${nullDefault}) DESC`;
+        break;
+      case 'views':
+        // impressionsMin is used for views/plays
+        orderByClause = sortOrder === 'asc'
+          ? sql`COALESCE(${ads.impressionsMin}, ${nullDefault}) ASC`
+          : sql`COALESCE(${ads.impressionsMin}, ${nullDefault}) DESC`;
+        break;
+      case 'comments':
+        orderByClause = sortOrder === 'asc'
+          ? sql`COALESCE(${ads.comments}, ${nullDefault}) ASC`
+          : sql`COALESCE(${ads.comments}, ${nullDefault}) DESC`;
+        break;
+      case 'shares':
+        orderByClause = sortOrder === 'asc'
+          ? sql`COALESCE(${ads.shares}, ${nullDefault}) ASC`
+          : sql`COALESCE(${ads.shares}, ${nullDefault}) DESC`;
+        break;
+      default:
+        orderByClause = orderFn(ads.scrapedAt);
     }
 
     // Query ads with advertiser info
