@@ -130,6 +130,22 @@ export async function POST(request: NextRequest) {
 }
 
 async function processResults(jobId: string, platform: string, runId: string, timePeriodDays?: number) {
+  // Wrap everything in try-catch to ALWAYS update job status
+  const markJobFailed = async (errorMsg: string) => {
+    try {
+      await db
+        .update(scrapeJobs)
+        .set({
+          status: 'failed',
+          completedAt: new Date().toISOString(),
+          error: errorMsg,
+        })
+        .where(eq(scrapeJobs.id, jobId));
+    } catch (dbErr) {
+      console.error('Failed to update job status:', dbErr);
+    }
+  };
+
   try {
     let result;
 
@@ -142,54 +158,64 @@ async function processResults(jobId: string, platform: string, runId: string, ti
     } else if (platform === 'instagram') {
       result = await getInstagramScrapeResults(runId, timePeriodDays);
     } else {
-      throw new Error(`Unknown platform: ${platform}`);
-    }
-
-    if (result.status !== 'completed') {
-      await db
-        .update(scrapeJobs)
-        .set({
-          status: 'failed',
-          completedAt: new Date().toISOString(),
-          error: `Scrape ${result.status}`,
-        })
-        .where(eq(scrapeJobs.id, jobId));
+      await markJobFailed(`Unknown platform: ${platform}`);
       return;
     }
 
-    // Insert advertisers (upsert)
-    for (const advertiser of result.advertisers) {
-      const existing = await db
-        .select()
-        .from(advertisers)
-        .where(eq(advertisers.id, advertiser.id))
-        .limit(1);
+    if (result.status !== 'completed') {
+      await markJobFailed(`Scrape ${result.status}`);
+      return;
+    }
 
-      if (existing.length === 0) {
-        await db.insert(advertisers).values(advertiser);
-      } else {
-        await db
-          .update(advertisers)
-          .set({ lastScrapedAt: new Date().toISOString() })
-          .where(eq(advertisers.id, advertiser.id));
+    // Insert advertisers (upsert) - skip invalid entries
+    for (const advertiser of result.advertisers) {
+      // Validate advertiser.id before DB lookup
+      if (!advertiser.id) {
+        console.warn('Skipping advertiser with no ID');
+        continue;
+      }
+
+      try {
+        const existing = await db
+          .select()
+          .from(advertisers)
+          .where(eq(advertisers.id, advertiser.id))
+          .limit(1);
+
+        if (existing.length === 0) {
+          await db.insert(advertisers).values(advertiser);
+        } else {
+          await db
+            .update(advertisers)
+            .set({ lastScrapedAt: new Date().toISOString() })
+            .where(eq(advertisers.id, advertiser.id));
+        }
+      } catch (advErr) {
+        console.error('Error processing advertiser:', advertiser.id, advErr);
+        // Continue processing other advertisers
       }
     }
 
     // Insert ads (check for duplicates by external ID)
     let insertedCount = 0;
     for (const ad of result.ads) {
-      if (ad.externalId) {
-        const existing = await db
-          .select()
-          .from(ads)
-          .where(eq(ads.externalId, ad.externalId))
-          .limit(1);
+      try {
+        if (ad.externalId) {
+          const existing = await db
+            .select()
+            .from(ads)
+            .where(eq(ads.externalId, ad.externalId))
+            .limit(1);
 
-        if (existing.length > 0) continue;
+          if (existing.length > 0) continue;
+        }
+
+        await db.insert(ads).values(ad);
+        insertedCount++;
+      } catch (adErr) {
+        console.error('Error inserting ad:', ad.externalId, adErr);
+        // Continue processing other ads
       }
-      
-      await db.insert(ads).values(ad);
-      insertedCount++;
     }
 
     // Update job status
@@ -203,13 +229,6 @@ async function processResults(jobId: string, platform: string, runId: string, ti
       .where(eq(scrapeJobs.id, jobId));
   } catch (error) {
     console.error('Process results error:', error);
-    await db
-      .update(scrapeJobs)
-      .set({
-        status: 'failed',
-        completedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error',
-      })
-      .where(eq(scrapeJobs.id, jobId));
+    await markJobFailed(error instanceof Error ? error.message : 'Unknown error');
   }
 }
