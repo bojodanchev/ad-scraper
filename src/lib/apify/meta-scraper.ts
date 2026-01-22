@@ -13,6 +13,10 @@ export interface MetaScrapeInput {
   mediaType?: 'ALL' | 'IMAGE' | 'VIDEO' | 'MEME' | 'NONE';
   activeStatus?: 'ACTIVE' | 'INACTIVE' | 'ALL';
   maxItems?: number;
+
+  // Post-scrape filters
+  minImpressions?: number;    // Minimum reach/impressions
+  maxImpressions?: number;    // Maximum reach/impressions
 }
 
 // The actual response structure from curious_coder/facebook-ads-library-scraper
@@ -157,23 +161,52 @@ export async function startMetaScrape(input: MetaScrapeInput): Promise<string> {
   return data.id;
 }
 
+export interface MetaFilterOptions {
+  minImpressions?: number;
+  maxImpressions?: number;
+}
+
 /**
  * Get results from a completed Meta scrape
  */
-export async function getMetaScrapeResults(runId: string): Promise<{
+export async function getMetaScrapeResults(
+  runId: string,
+  filters?: MetaFilterOptions
+): Promise<{
   status: string;
   ads: NewAd[];
   advertisers: NewAdvertiser[];
 }> {
-  const { status, results } = await apifyClient.waitForRunAndGetResults<MetaAdResult>(runId);
+  const filterOpts = filters || {};
 
-  console.log('Meta scrape results count:', results.length);
-  if (results.length > 0) {
-    console.log('Sample result:', JSON.stringify(results[0], null, 2).substring(0, 500));
+  const { status, results: rawResults } = await apifyClient.waitForRunAndGetResults<MetaAdResult>(runId);
+
+  console.log('Meta scrape results count:', rawResults.length);
+  if (rawResults.length > 0) {
+    console.log('Sample result:', JSON.stringify(rawResults[0], null, 2).substring(0, 500));
   }
 
-  if (status !== 'completed' || results.length === 0) {
+  if (status !== 'completed' || rawResults.length === 0) {
     return { status, ads: [], advertisers: [] };
+  }
+
+  // Apply filters
+  let results = rawResults;
+
+  // Filter by impressions range
+  if (filterOpts.minImpressions !== undefined || filterOpts.maxImpressions !== undefined) {
+    const beforeCount = results.length;
+    results = results.filter(r => {
+      const impressions = r.reach_estimate?.lower_bound || r.reach_estimate?.upper_bound || 0;
+      if (filterOpts.minImpressions !== undefined && impressions < filterOpts.minImpressions) {
+        return false;
+      }
+      if (filterOpts.maxImpressions !== undefined && impressions > filterOpts.maxImpressions) {
+        return false;
+      }
+      return true;
+    });
+    console.log(`Meta filtered by impressions (${filterOpts.minImpressions || 0}-${filterOpts.maxImpressions || '∞'}): ${results.length}/${beforeCount} results`);
   }
 
   // Normalize results to our schema
@@ -193,7 +226,19 @@ export async function getMetaScrapeResults(runId: string): Promise<{
         id: result.page_id,
         platform: 'meta',
         name: result.page_name || result.snapshot?.page_name || 'Unknown',
+        username: null, // Meta pages don't have usernames like TikTok/IG
         pageUrl: result.snapshot?.page_profile_uri || `https://facebook.com/${result.page_id}`,
+        avatarUrl: result.snapshot?.page_profile_picture_url || null,
+        bio: null, // Not available from Ads Library
+        verified: false, // Not available from Ads Library
+        followerCount: null, // Not available from Ads Library
+        followingCount: null,
+        totalLikes: null,
+        postsCount: null,
+        avgLikesPerPost: null,
+        avgViewsPerPost: null,
+        avgCommentsPerPost: null,
+        engagementRate: null,
         firstSeenAt: new Date().toISOString(),
         lastScrapedAt: new Date().toISOString(),
         isTracked: false,

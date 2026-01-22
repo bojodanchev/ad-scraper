@@ -9,6 +9,8 @@ Scrape and analyze high-performing ads from Meta Ads Library, TikTok, and Instag
 - **Multi-platform scraping** — Meta Ads Library, TikTok viral content, Instagram posts
 - **Niche keyword search** — Find viral content by searching "AI automation", "ecommerce", etc.
 - **Time period filtering** — Filter to last 48h, 7d, 30d, or 90d for fresh viral content
+- **Advanced filters** — Filter by follower count, engagement rate, impressions range
+- **Creator analytics** — Track engagement rate, view-to-follower ratio, top posts
 - **AI video analysis** — Gemini watches videos and extracts hooks, scripts, visual breakdowns
 - **Swipe file collections** — Save and organize winning ads
 - **Team-friendly** — Web UI anyone can use, deployed on Vercel
@@ -156,6 +158,24 @@ ad-scraper/
 - 500 video analyses: $0.50
 - **Total: ~$47.50/month**
 
+## Testing
+
+**IMPORTANT: Tests run exclusively on the Vercel deployment.**
+
+All e2e and integration tests must target the production URL:
+```
+https://ad-scraper-ops.vercel.app
+```
+
+Do NOT run tests against localhost. The Vercel deployment is the source of truth for testing.
+
+### Running Tests
+
+Use Playwright MCP to run browser-based tests:
+1. Navigate to the Vercel deployment URL
+2. Test page loads, navigation, form submissions
+3. Validate API responses through the UI
+
 ## Roadmap
 
 - [x] Meta Ads Library scraping
@@ -167,8 +187,10 @@ ad-scraper/
 - [x] Gemini video analysis
 - [x] Ad library with filters
 - [x] Job recovery for stuck scrapes
+- [x] Creator stats (engagement rate, view/follower ratio)
+- [x] Advanced scrape filters (follower range, engagement %, impressions)
+- [x] Creators page with stats and detail views
 - [ ] Collections/swipe files
-- [ ] Advertiser tracking
 - [ ] Scheduled scraping
 - [ ] Export to CSV/JSON
 

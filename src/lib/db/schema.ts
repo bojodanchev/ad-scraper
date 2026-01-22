@@ -1,14 +1,50 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
-// Advertisers we're tracking
+// Advertisers/Creators we're tracking
 export const advertisers = sqliteTable('advertisers', {
   id: text('id').primaryKey(),
-  platform: text('platform').notNull(), // 'meta' | 'tiktok'
+  platform: text('platform').notNull(), // 'meta' | 'tiktok' | 'instagram'
   name: text('name').notNull(),
+  username: text('username'), // @handle without @
   pageUrl: text('page_url'),
+  avatarUrl: text('avatar_url'),
+  bio: text('bio'),
+  verified: integer('verified', { mode: 'boolean' }).default(false),
+
+  // Creator Stats (from platform data)
+  followerCount: integer('follower_count'),
+  followingCount: integer('following_count'),
+  totalLikes: integer('total_likes'), // Total likes received (heartCount on TikTok)
+  postsCount: integer('posts_count'),
+
+  // Calculated Metrics (updated on scrape)
+  avgLikesPerPost: integer('avg_likes_per_post'),
+  avgViewsPerPost: integer('avg_views_per_post'),
+  avgCommentsPerPost: integer('avg_comments_per_post'),
+  engagementRate: text('engagement_rate'), // Stored as decimal string for precision
+
   firstSeenAt: text('first_seen_at'),
   lastScrapedAt: text('last_scraped_at'),
   isTracked: integer('is_tracked', { mode: 'boolean' }).default(false),
+});
+
+// Historical creator stats for tracking growth over time
+export const creatorStats = sqliteTable('creator_stats', {
+  id: text('id').primaryKey(),
+  advertiserId: text('advertiser_id')
+    .notNull()
+    .references(() => advertisers.id),
+  recordedAt: text('recorded_at').notNull(), // ISO timestamp
+
+  // Snapshot of stats at this point
+  followerCount: integer('follower_count'),
+  followingCount: integer('following_count'),
+  totalLikes: integer('total_likes'),
+  postsCount: integer('posts_count'),
+
+  // Derived metrics
+  followerGrowth: integer('follower_growth'), // Change since last record
+  engagementRate: text('engagement_rate'),
 });
 
 // The ads themselves
@@ -94,3 +130,6 @@ export type NewCollection = typeof collections.$inferInsert;
 
 export type CollectionAd = typeof collectionAds.$inferSelect;
 export type NewCollectionAd = typeof collectionAds.$inferInsert;
+
+export type CreatorStat = typeof creatorStats.$inferSelect;
+export type NewCreatorStat = typeof creatorStats.$inferInsert;

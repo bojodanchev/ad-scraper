@@ -2,12 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import { db, ensureInitialized } from '@/lib/db/client';
 import { scrapeJobs, ads, advertisers } from '@/lib/db/schema';
-import { startMetaScrape, getMetaScrapeResults } from '@/lib/apify/meta-scraper';
-import { startTikTokScrape, getTikTokScrapeResults } from '@/lib/apify/tiktok-scraper';
-import { startInstagramScrape, getInstagramScrapeResults } from '@/lib/apify/instagram-scraper';
+import { startMetaScrape, getMetaScrapeResults, MetaFilterOptions } from '@/lib/apify/meta-scraper';
+import { startTikTokScrape, getTikTokScrapeResults, TikTokFilterOptions } from '@/lib/apify/tiktok-scraper';
+import { startInstagramScrape, getInstagramScrapeResults, InstagramFilterOptions } from '@/lib/apify/instagram-scraper';
 import { eq } from 'drizzle-orm';
 
 export const maxDuration = 300; // 5 minutes for Vercel Pro
+
+// Combined filter options for all platforms
+interface ScrapeFilters {
+  timePeriodDays?: number;
+  // TikTok filters
+  minFollowers?: number;
+  maxFollowers?: number;
+  // Instagram filters
+  minEngagementRate?: number;
+  minLikes?: number;
+  minViews?: number;
+  // Meta filters
+  minImpressions?: number;
+  maxImpressions?: number;
+}
 
 // Convert time period string to days
 function timePeriodToDays(timePeriod?: string): number | undefined {
@@ -27,7 +42,21 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { platform, searchType, query, filters } = body;
-    const timePeriodDays = timePeriodToDays(filters?.timePeriod);
+
+    // Build filter options
+    const scrapeFilters: ScrapeFilters = {
+      timePeriodDays: timePeriodToDays(filters?.timePeriod),
+      // TikTok filters
+      minFollowers: filters?.minFollowers ? parseInt(filters.minFollowers) : undefined,
+      maxFollowers: filters?.maxFollowers ? parseInt(filters.maxFollowers) : undefined,
+      // Instagram filters
+      minEngagementRate: filters?.minEngagementRate ? parseFloat(filters.minEngagementRate) : undefined,
+      minLikes: filters?.minLikes ? parseInt(filters.minLikes) : undefined,
+      minViews: filters?.minViews ? parseInt(filters.minViews) : undefined,
+      // Meta filters
+      minImpressions: filters?.minImpressions ? parseInt(filters.minImpressions) : undefined,
+      maxImpressions: filters?.maxImpressions ? parseInt(filters.maxImpressions) : undefined,
+    };
 
     if (!platform || !query) {
       return NextResponse.json(
@@ -72,7 +101,9 @@ export async function POST(request: NextRequest) {
           searchQueries: searchType === 'keyword' ? [query] : undefined,
           sortBy: filters?.sortBy || 'popular',
           maxItems: filters?.maxItems || 50,
-          timePeriodDays, // Native date filtering at scrape time
+          timePeriodDays: scrapeFilters.timePeriodDays, // Native date filtering at scrape time
+          minFollowers: scrapeFilters.minFollowers,
+          maxFollowers: scrapeFilters.maxFollowers,
         });
       } else if (platform === 'instagram') {
         // Instagram: supports hashtags, profiles, or search
@@ -82,7 +113,10 @@ export async function POST(request: NextRequest) {
           hashtags: searchType === 'hashtag' ? [query] : undefined,
           usernames: searchType === 'profile' ? [query] : undefined,
           resultsLimit: filters?.maxItems || 50,
-          timePeriodDays, // For post-scrape filtering
+          timePeriodDays: scrapeFilters.timePeriodDays, // For post-scrape filtering
+          minEngagementRate: scrapeFilters.minEngagementRate,
+          minLikes: scrapeFilters.minLikes,
+          minViews: scrapeFilters.minViews,
         });
       } else {
         return NextResponse.json(
@@ -113,7 +147,7 @@ export async function POST(request: NextRequest) {
       .where(eq(scrapeJobs.id, jobId));
 
     // Start background processing (non-blocking)
-    processResults(jobId, platform, runId, timePeriodDays).catch(console.error);
+    processResults(jobId, platform, runId, scrapeFilters).catch(console.error);
 
     return NextResponse.json({
       jobId,
@@ -129,7 +163,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processResults(jobId: string, platform: string, runId: string, timePeriodDays?: number) {
+async function processResults(jobId: string, platform: string, runId: string, filters: ScrapeFilters) {
   // Wrap everything in try-catch to ALWAYS update job status
   const markJobFailed = async (errorMsg: string) => {
     try {
@@ -150,13 +184,26 @@ async function processResults(jobId: string, platform: string, runId: string, ti
     let result;
 
     if (platform === 'meta') {
-      // Meta Ads Library doesn't support time period filtering in results
-      // (filtering is done at scrape time by activeStatus)
-      result = await getMetaScrapeResults(runId);
+      const metaFilters: MetaFilterOptions = {
+        minImpressions: filters.minImpressions,
+        maxImpressions: filters.maxImpressions,
+      };
+      result = await getMetaScrapeResults(runId, metaFilters);
     } else if (platform === 'tiktok') {
-      result = await getTikTokScrapeResults(runId, timePeriodDays);
+      const tiktokFilters: TikTokFilterOptions = {
+        timePeriodDays: filters.timePeriodDays,
+        minFollowers: filters.minFollowers,
+        maxFollowers: filters.maxFollowers,
+      };
+      result = await getTikTokScrapeResults(runId, tiktokFilters);
     } else if (platform === 'instagram') {
-      result = await getInstagramScrapeResults(runId, timePeriodDays);
+      const igFilters: InstagramFilterOptions = {
+        timePeriodDays: filters.timePeriodDays,
+        minEngagementRate: filters.minEngagementRate,
+        minLikes: filters.minLikes,
+        minViews: filters.minViews,
+      };
+      result = await getInstagramScrapeResults(runId, igFilters);
     } else {
       await markJobFailed(`Unknown platform: ${platform}`);
       return;
@@ -185,9 +232,32 @@ async function processResults(jobId: string, platform: string, runId: string, ti
         if (existing.length === 0) {
           await db.insert(advertisers).values(advertiser);
         } else {
+          // Update with new data, preserving existing values if new ones are null
+          const updateData: Record<string, unknown> = {
+            lastScrapedAt: new Date().toISOString(),
+          };
+
+          // Only update fields if the new value is not null/undefined
+          if (advertiser.avatarUrl) updateData.avatarUrl = advertiser.avatarUrl;
+          if (advertiser.bio) updateData.bio = advertiser.bio;
+          if (advertiser.verified !== undefined) updateData.verified = advertiser.verified;
+          if (advertiser.followerCount !== null && advertiser.followerCount !== undefined) {
+            updateData.followerCount = advertiser.followerCount;
+          }
+          if (advertiser.followingCount !== null && advertiser.followingCount !== undefined) {
+            updateData.followingCount = advertiser.followingCount;
+          }
+          if (advertiser.totalLikes !== null && advertiser.totalLikes !== undefined) {
+            updateData.totalLikes = advertiser.totalLikes;
+          }
+          if (advertiser.postsCount !== null && advertiser.postsCount !== undefined) {
+            updateData.postsCount = advertiser.postsCount;
+          }
+          if (advertiser.engagementRate) updateData.engagementRate = advertiser.engagementRate;
+
           await db
             .update(advertisers)
-            .set({ lastScrapedAt: new Date().toISOString() })
+            .set(updateData)
             .where(eq(advertisers.id, advertiser.id));
         }
       } catch (advErr) {

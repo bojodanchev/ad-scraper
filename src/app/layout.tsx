@@ -44,6 +44,12 @@ export default function RootLayout({
                   Library
                 </Link>
                 <Link
+                  href="/creators"
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Creators
+                </Link>
+                <Link
                   href="/scrape"
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >

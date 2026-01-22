@@ -20,6 +20,10 @@ export interface TikTokScrapeInput {
   // Time period filter (in days)
   timePeriodDays?: number;    // Filter to content within last N days
 
+  // Creator filters (post-scrape filtering)
+  minFollowers?: number;      // Minimum creator follower count
+  maxFollowers?: number;      // Maximum creator follower count
+
   // Download options
   downloadVideos?: boolean;
   downloadCovers?: boolean;
@@ -116,16 +120,30 @@ export async function startTikTokScrape(input: TikTokScrapeInput): Promise<strin
   return data.id;
 }
 
+export interface TikTokFilterOptions {
+  timePeriodDays?: number;
+  minFollowers?: number;
+  maxFollowers?: number;
+}
+
 /**
  * Get results from a completed TikTok scrape
  * @param runId - Apify run ID
- * @param timePeriodDays - Optional filter to only include content from last N days
+ * @param filters - Optional filters for time period and follower range
  */
-export async function getTikTokScrapeResults(runId: string, timePeriodDays?: number): Promise<{
+export async function getTikTokScrapeResults(
+  runId: string,
+  filters?: TikTokFilterOptions | number // number for backwards compat (timePeriodDays)
+): Promise<{
   status: string;
   ads: NewAd[];
   advertisers: NewAdvertiser[];
 }> {
+  // Handle backwards compatibility
+  const filterOpts: TikTokFilterOptions = typeof filters === 'number'
+    ? { timePeriodDays: filters }
+    : filters || {};
+
   const { status, results: rawResults } = await apifyClient.waitForRunAndGetResults<TikTokVideoResult>(runId);
 
   console.log('TikTok scrape raw results count:', rawResults.length);
@@ -137,19 +155,40 @@ export async function getTikTokScrapeResults(runId: string, timePeriodDays?: num
     return { status, ads: [], advertisers: [] };
   }
 
-  // Filter by time period if specified
+  // Apply filters
   let results = rawResults;
-  if (timePeriodDays) {
+
+  // Filter by time period
+  if (filterOpts.timePeriodDays) {
     const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - timePeriodDays);
+    cutoffDate.setDate(cutoffDate.getDate() - filterOpts.timePeriodDays);
     const cutoffTimestamp = Math.floor(cutoffDate.getTime() / 1000);
 
-    results = rawResults.filter(r => {
+    results = results.filter(r => {
       if (!r.createTime) return false;
       return r.createTime >= cutoffTimestamp;
     });
 
-    console.log(`TikTok filtered to last ${timePeriodDays} days: ${results.length}/${rawResults.length} results`);
+    console.log(`TikTok filtered to last ${filterOpts.timePeriodDays} days: ${results.length}/${rawResults.length} results`);
+  }
+
+  // Filter by follower range
+  if (filterOpts.minFollowers !== undefined || filterOpts.maxFollowers !== undefined) {
+    const beforeCount = results.length;
+    results = results.filter(r => {
+      const followers = r.author?.followerCount;
+      if (followers === undefined || followers === null) return true; // Keep if no data
+
+      if (filterOpts.minFollowers !== undefined && followers < filterOpts.minFollowers) {
+        return false;
+      }
+      if (filterOpts.maxFollowers !== undefined && followers > filterOpts.maxFollowers) {
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`TikTok filtered by followers (${filterOpts.minFollowers || 0}-${filterOpts.maxFollowers || '∞'}): ${results.length}/${beforeCount} results`);
   }
 
   // Normalize results to our schema
@@ -162,11 +201,32 @@ export async function getTikTokScrapeResults(runId: string, timePeriodDays?: num
     const advertiserId = author?.id || author?.uniqueId || `tiktok_${nanoid(8)}`;
 
     if (author?.uniqueId && !advertiserMap.has(advertiserId)) {
+      // Calculate engagement rate if we have follower count
+      let engagementRate: string | null = null;
+      if (author.followerCount && author.followerCount > 0 && result.playCount) {
+        // TikTok engagement = (likes + comments + shares) / views * 100
+        const engagement = (result.diggCount || 0) + (result.commentCount || 0) + (result.shareCount || 0);
+        const rate = (engagement / result.playCount) * 100;
+        engagementRate = rate.toFixed(2);
+      }
+
       advertiserMap.set(advertiserId, {
         id: advertiserId,
         platform: 'tiktok',
         name: author.nickname || author.uniqueId,
+        username: author.uniqueId,
         pageUrl: `https://tiktok.com/@${author.uniqueId}`,
+        avatarUrl: author.avatarThumb || null,
+        bio: author.signature || null,
+        verified: author.verified || false,
+        followerCount: author.followerCount || null,
+        followingCount: null, // Not available from this scraper
+        totalLikes: author.heartCount || null,
+        postsCount: null, // Would need profile scrape
+        avgLikesPerPost: null, // Calculated later from aggregated data
+        avgViewsPerPost: null,
+        avgCommentsPerPost: null,
+        engagementRate,
         firstSeenAt: new Date().toISOString(),
         lastScrapedAt: new Date().toISOString(),
         isTracked: false,

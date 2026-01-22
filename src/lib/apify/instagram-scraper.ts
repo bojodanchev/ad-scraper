@@ -20,6 +20,11 @@ export interface InstagramScrapeInput {
 
   // Time period filter (in days)
   timePeriodDays?: number;           // Filter to content within last N days
+
+  // Engagement filters (post-scrape)
+  minEngagementRate?: number;        // Minimum engagement rate % (likes+comments/views)
+  minLikes?: number;                 // Minimum likes per post
+  minViews?: number;                 // Minimum views per post
 }
 
 // Output structure from apify/instagram-scraper
@@ -90,16 +95,48 @@ export async function startInstagramScrape(input: InstagramScrapeInput): Promise
   return data.id;
 }
 
+export interface InstagramFilterOptions {
+  timePeriodDays?: number;
+  minEngagementRate?: number;
+  minLikes?: number;
+  minViews?: number;
+}
+
+/**
+ * Calculate engagement rate for a post
+ * Instagram engagement = (likes + comments) / views * 100
+ * If no views, use likes as base
+ */
+function calculateEngagementRate(post: InstagramPostResult): number | null {
+  const likes = post.likesCount || 0;
+  const comments = post.commentsCount || 0;
+  const views = post.viewsCount;
+
+  if (views && views > 0) {
+    return ((likes + comments) / views) * 100;
+  }
+  // For images without views, engagement rate can't be calculated the same way
+  return null;
+}
+
 /**
  * Get results from a completed Instagram scrape
  * @param runId - Apify run ID
- * @param timePeriodDays - Optional filter to only include content from last N days
+ * @param filters - Optional filters for time period and engagement
  */
-export async function getInstagramScrapeResults(runId: string, timePeriodDays?: number): Promise<{
+export async function getInstagramScrapeResults(
+  runId: string,
+  filters?: InstagramFilterOptions | number // number for backwards compat (timePeriodDays)
+): Promise<{
   status: string;
   ads: NewAd[];
   advertisers: NewAdvertiser[];
 }> {
+  // Handle backwards compatibility
+  const filterOpts: InstagramFilterOptions = typeof filters === 'number'
+    ? { timePeriodDays: filters }
+    : filters || {};
+
   const { status, results: rawResults } = await apifyClient.waitForRunAndGetResults<InstagramPostResult>(runId);
 
   console.log('Instagram scrape raw results count:', rawResults.length);
@@ -111,19 +148,46 @@ export async function getInstagramScrapeResults(runId: string, timePeriodDays?: 
     return { status, ads: [], advertisers: [] };
   }
 
-  // Filter by time period if specified
+  // Apply filters
   let results = rawResults;
-  if (timePeriodDays) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - timePeriodDays);
 
-    results = rawResults.filter(r => {
+  // Filter by time period
+  if (filterOpts.timePeriodDays) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - filterOpts.timePeriodDays);
+
+    results = results.filter(r => {
       if (!r.timestamp) return false;
       const postDate = new Date(r.timestamp);
       return postDate >= cutoffDate;
     });
 
-    console.log(`Instagram filtered to last ${timePeriodDays} days: ${results.length}/${rawResults.length} results`);
+    console.log(`Instagram filtered to last ${filterOpts.timePeriodDays} days: ${results.length}/${rawResults.length} results`);
+  }
+
+  // Filter by engagement rate
+  if (filterOpts.minEngagementRate !== undefined) {
+    const beforeCount = results.length;
+    results = results.filter(r => {
+      const rate = calculateEngagementRate(r);
+      if (rate === null) return true; // Keep posts without rate data
+      return rate >= (filterOpts.minEngagementRate || 0);
+    });
+    console.log(`Instagram filtered by engagement rate (>=${filterOpts.minEngagementRate}%): ${results.length}/${beforeCount} results`);
+  }
+
+  // Filter by minimum likes
+  if (filterOpts.minLikes !== undefined) {
+    const beforeCount = results.length;
+    results = results.filter(r => (r.likesCount || 0) >= (filterOpts.minLikes || 0));
+    console.log(`Instagram filtered by min likes (>=${filterOpts.minLikes}): ${results.length}/${beforeCount} results`);
+  }
+
+  // Filter by minimum views
+  if (filterOpts.minViews !== undefined) {
+    const beforeCount = results.length;
+    results = results.filter(r => (r.viewsCount || 0) >= (filterOpts.minViews || 0));
+    console.log(`Instagram filtered by min views (>=${filterOpts.minViews}): ${results.length}/${beforeCount} results`);
   }
 
   // Normalize results to our schema
@@ -139,7 +203,19 @@ export async function getInstagramScrapeResults(runId: string, timePeriodDays?: 
         id: advertiserId,
         platform: 'instagram',
         name: result.ownerFullName || result.ownerUsername,
+        username: result.ownerUsername,
         pageUrl: `https://instagram.com/${result.ownerUsername}`,
+        avatarUrl: null, // Not available from post scraper
+        bio: null, // Not available from post scraper
+        verified: false, // Not available from post scraper
+        followerCount: null, // Not available from post scraper
+        followingCount: null,
+        totalLikes: null,
+        postsCount: null,
+        avgLikesPerPost: null, // Will be calculated from aggregated data
+        avgViewsPerPost: null,
+        avgCommentsPerPost: null,
+        engagementRate: null,
         firstSeenAt: new Date().toISOString(),
         lastScrapedAt: new Date().toISOString(),
         isTracked: false,

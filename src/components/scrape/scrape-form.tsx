@@ -50,6 +50,7 @@ export function ScrapeForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [platform, setPlatform] = useState<Platform>('meta');
   const [searchType, setSearchType] = useState<SearchType>('keyword');
@@ -59,6 +60,19 @@ export function ScrapeForm() {
   const [maxItems, setMaxItems] = useState('50');
   const [sortBy, setSortBy] = useState('popular');
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('all');
+
+  // TikTok creator filters
+  const [minFollowers, setMinFollowers] = useState('');
+  const [maxFollowers, setMaxFollowers] = useState('');
+
+  // Instagram engagement filters
+  const [minEngagementRate, setMinEngagementRate] = useState('');
+  const [minLikes, setMinLikes] = useState('');
+  const [minViews, setMinViews] = useState('');
+
+  // Meta impressions filters
+  const [minImpressions, setMinImpressions] = useState('');
+  const [maxImpressions, setMaxImpressions] = useState('');
 
   // Reset search type when platform changes
   const handlePlatformChange = (newPlatform: Platform) => {
@@ -103,6 +117,16 @@ export function ScrapeForm() {
             activeOnly: true,
             sortBy, // For TikTok/Instagram
             timePeriod: timePeriod !== 'all' ? timePeriod : undefined,
+            // TikTok creator filters
+            minFollowers: minFollowers || undefined,
+            maxFollowers: maxFollowers || undefined,
+            // Instagram engagement filters
+            minEngagementRate: minEngagementRate || undefined,
+            minLikes: minLikes || undefined,
+            minViews: minViews || undefined,
+            // Meta impressions filters
+            minImpressions: minImpressions || undefined,
+            maxImpressions: maxImpressions || undefined,
           },
         }),
       });
@@ -306,6 +330,121 @@ export function ScrapeForm() {
               </Select>
             </div>
           </div>
+
+          {/* Advanced Filters Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+          >
+            <span>{showAdvanced ? '▼' : '▶'}</span>
+            <span>Advanced Filters (Creator Stats)</span>
+          </button>
+
+          {/* Advanced Filters - Platform specific */}
+          {showAdvanced && (
+            <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+              {/* TikTok: Follower Range */}
+              {platform === 'tiktok' && (
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Creator Follower Range</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Filter by creator follower count (e.g., 10K-100K for micro-influencers)
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Min Followers</Label>
+                      <Input
+                        type="number"
+                        value={minFollowers}
+                        onChange={(e) => setMinFollowers(e.target.value)}
+                        placeholder="e.g., 10000"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Max Followers</Label>
+                      <Input
+                        type="number"
+                        value={maxFollowers}
+                        onChange={(e) => setMaxFollowers(e.target.value)}
+                        placeholder="e.g., 100000"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Instagram: Engagement Filters */}
+              {platform === 'instagram' && (
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Engagement Filters</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Filter by post engagement (e.g., &gt;2.8% engagement rate for micro-influencers)
+                  </p>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Min Engagement %</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={minEngagementRate}
+                        onChange={(e) => setMinEngagementRate(e.target.value)}
+                        placeholder="e.g., 2.8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Min Likes</Label>
+                      <Input
+                        type="number"
+                        value={minLikes}
+                        onChange={(e) => setMinLikes(e.target.value)}
+                        placeholder="e.g., 1000"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Min Views</Label>
+                      <Input
+                        type="number"
+                        value={minViews}
+                        onChange={(e) => setMinViews(e.target.value)}
+                        placeholder="e.g., 10000"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Meta: Impressions Range */}
+              {platform === 'meta' && (
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Impressions/Reach Range</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Filter by estimated reach (ad impressions)
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Min Impressions</Label>
+                      <Input
+                        type="number"
+                        value={minImpressions}
+                        onChange={(e) => setMinImpressions(e.target.value)}
+                        placeholder="e.g., 10000"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Max Impressions</Label>
+                      <Input
+                        type="number"
+                        value={maxImpressions}
+                        onChange={(e) => setMaxImpressions(e.target.value)}
+                        placeholder="e.g., 1000000"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Error */}
           {error && (

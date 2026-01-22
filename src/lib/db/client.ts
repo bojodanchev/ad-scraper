@@ -52,10 +52,49 @@ export async function initializeDatabase() {
       id TEXT PRIMARY KEY,
       platform TEXT NOT NULL,
       name TEXT NOT NULL,
+      username TEXT,
       page_url TEXT,
+      avatar_url TEXT,
+      bio TEXT,
+      verified INTEGER DEFAULT 0,
+      follower_count INTEGER,
+      following_count INTEGER,
+      total_likes INTEGER,
+      posts_count INTEGER,
+      avg_likes_per_post INTEGER,
+      avg_views_per_post INTEGER,
+      avg_comments_per_post INTEGER,
+      engagement_rate TEXT,
       first_seen_at TEXT,
       last_scraped_at TEXT,
       is_tracked INTEGER DEFAULT 0
+    )
+  `);
+
+  // Add new columns to existing advertisers table if they don't exist
+  const columns = ['username', 'avatar_url', 'bio', 'verified', 'follower_count',
+    'following_count', 'total_likes', 'posts_count', 'avg_likes_per_post',
+    'avg_views_per_post', 'avg_comments_per_post', 'engagement_rate'];
+  for (const col of columns) {
+    try {
+      await c.execute(`ALTER TABLE advertisers ADD COLUMN ${col} ${col === 'engagement_rate' || col === 'username' || col === 'avatar_url' || col === 'bio' ? 'TEXT' : 'INTEGER'}`);
+    } catch {
+      // Column already exists
+    }
+  }
+
+  // Creator stats history table
+  await c.execute(`
+    CREATE TABLE IF NOT EXISTS creator_stats (
+      id TEXT PRIMARY KEY,
+      advertiser_id TEXT NOT NULL REFERENCES advertisers(id),
+      recorded_at TEXT NOT NULL,
+      follower_count INTEGER,
+      following_count INTEGER,
+      total_likes INTEGER,
+      posts_count INTEGER,
+      follower_growth INTEGER,
+      engagement_rate TEXT
     )
   `);
 
@@ -124,6 +163,9 @@ export async function initializeDatabase() {
   await c.execute(`CREATE INDEX IF NOT EXISTS idx_ads_advertiser ON ads(advertiser_id)`);
   await c.execute(`CREATE INDEX IF NOT EXISTS idx_ads_scraped_at ON ads(scraped_at)`);
   await c.execute(`CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_creator_stats_advertiser ON creator_stats(advertiser_id)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_creator_stats_recorded ON creator_stats(recorded_at)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_advertisers_followers ON advertisers(follower_count)`);
 }
 
 // Auto-initialize on first import
