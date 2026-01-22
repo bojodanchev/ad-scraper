@@ -82,7 +82,7 @@ export async function startTikTokScrape(input: TikTokScrapeInput): Promise<strin
     actorInput.profiles = input.profiles.map(p => p.replace('@', ''));
   }
 
-  // Add search queries if provided
+  // Add search queries if provided - this is key for niche targeting!
   if (input.searchQueries && input.searchQueries.length > 0) {
     actorInput.searchQueries = input.searchQueries;
   }
@@ -100,6 +100,16 @@ export async function startTikTokScrape(input: TikTokScrapeInput): Promise<strin
       popular: 2,
     };
     actorInput.oldestFirst = sortMap[input.sortBy] || 0;
+  }
+
+  // Native date filtering - oldestPostDate parameter
+  // This filters at scrape time to only get content within the time period
+  if (input.timePeriodDays) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - input.timePeriodDays);
+    // Format as ISO string (YYYY-MM-DD)
+    actorInput.oldestPostDate = cutoffDate.toISOString().split('T')[0];
+    console.log(`TikTok scrape with oldestPostDate: ${actorInput.oldestPostDate}`);
   }
 
   const { data } = await apifyClient.runActor(TIKTOK_ACTOR_ID, actorInput);

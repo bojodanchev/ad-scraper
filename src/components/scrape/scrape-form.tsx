@@ -28,20 +28,21 @@ const timePeriodOptions: { value: TimePeriod; label: string; days: number | null
 ];
 
 // Platform-specific search type options
+// Keyword/Search Query is first for TikTok/Instagram - best for niche targeting
 const searchTypeOptions: Record<Platform, { value: SearchType; label: string }[]> = {
   meta: [
     { value: 'keyword', label: 'Keyword Search' },
     { value: 'advertiser', label: 'Advertiser / Page ID' },
   ],
   tiktok: [
+    { value: 'keyword', label: 'Search Query (Recommended)' },
     { value: 'hashtag', label: 'Hashtag (e.g. #fitness)' },
     { value: 'profile', label: 'Profile/Creator (e.g. @username)' },
-    { value: 'keyword', label: 'Search Query' },
   ],
   instagram: [
+    { value: 'keyword', label: 'Search (Recommended)' },
     { value: 'hashtag', label: 'Hashtag (e.g. #fitness)' },
     { value: 'profile', label: 'Profile (e.g. @username)' },
-    { value: 'keyword', label: 'Search' },
   ],
 };
 
@@ -146,8 +147,8 @@ export function ScrapeForm() {
             </Select>
             <p className="text-xs text-muted-foreground">
               {platform === 'meta' && 'Search Facebook Ads Library for competitor ads'}
-              {platform === 'tiktok' && 'Find viral TikTok videos by hashtag, creator, or search'}
-              {platform === 'instagram' && 'Find viral Instagram posts by hashtag or profile'}
+              {platform === 'tiktok' && 'Find viral TikTok videos - search by niche keywords like "AI automation" or "ecommerce"'}
+              {platform === 'instagram' && 'Find viral Instagram posts - search by niche keywords, hashtags, or profiles'}
             </p>
           </div>
 
@@ -185,10 +186,37 @@ export function ScrapeForm() {
               placeholder={getPlaceholder()}
               required
             />
+            {searchType === 'keyword' && (platform === 'tiktok' || platform === 'instagram') && (
+              <p className="text-xs text-muted-foreground">
+                Search for niche content like &quot;AI automation&quot;, &quot;ecommerce tips&quot;, &quot;fitness motivation&quot;
+              </p>
+            )}
           </div>
 
+          {/* Time Period - Prominent placement for TikTok/Instagram */}
+          {(platform === 'tiktok' || platform === 'instagram') && (
+            <div className="space-y-2 p-4 bg-muted/50 rounded-lg border">
+              <Label className="text-sm font-medium">Time Period (Find Recent Viral Content)</Label>
+              <Select value={timePeriod} onValueChange={(v) => setTimePeriod(v as TimePeriod)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {timePeriodOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Filter to only include content posted within this time period
+              </p>
+            </div>
+          )}
+
           {/* Filters Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {/* Country - Only for Meta */}
             {platform === 'meta' && (
               <div className="space-y-2">
@@ -210,6 +238,25 @@ export function ScrapeForm() {
               </div>
             )}
 
+            {/* Time Period - For Meta only (in grid) */}
+            {platform === 'meta' && (
+              <div className="space-y-2">
+                <Label>Time Period</Label>
+                <Select value={timePeriod} onValueChange={(v) => setTimePeriod(v as TimePeriod)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {timePeriodOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {/* Sort By - For TikTok/Instagram */}
             {(platform === 'tiktok' || platform === 'instagram') && (
               <div className="space-y-2">
@@ -225,23 +272,6 @@ export function ScrapeForm() {
                 </Select>
               </div>
             )}
-
-            {/* Time Period - For all platforms */}
-            <div className="space-y-2">
-              <Label>Time Period</Label>
-              <Select value={timePeriod} onValueChange={(v) => setTimePeriod(v as TimePeriod)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {timePeriodOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
             {/* Media Type - Only for Meta */}
             {platform === 'meta' && (

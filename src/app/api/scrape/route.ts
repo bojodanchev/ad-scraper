@@ -65,12 +65,14 @@ export async function POST(request: NextRequest) {
         });
       } else if (platform === 'tiktok') {
         // TikTok: supports hashtags, profiles, or search queries
+        // Search queries are great for niche targeting (e.g., "AI automation", "ecommerce")
         runId = await startTikTokScrape({
           hashtags: searchType === 'hashtag' ? [query] : undefined,
           profiles: searchType === 'profile' ? [query] : undefined,
           searchQueries: searchType === 'keyword' ? [query] : undefined,
           sortBy: filters?.sortBy || 'popular',
           maxItems: filters?.maxItems || 50,
+          timePeriodDays, // Native date filtering at scrape time
         });
       } else if (platform === 'instagram') {
         // Instagram: supports hashtags, profiles, or search
@@ -80,6 +82,7 @@ export async function POST(request: NextRequest) {
           hashtags: searchType === 'hashtag' ? [query] : undefined,
           usernames: searchType === 'profile' ? [query] : undefined,
           resultsLimit: filters?.maxItems || 50,
+          timePeriodDays, // For post-scrape filtering
         });
       } else {
         return NextResponse.json(
