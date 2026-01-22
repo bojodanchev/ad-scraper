@@ -15,46 +15,66 @@ export interface MetaScrapeInput {
   maxItems?: number;
 }
 
+// The actual response structure from curious_coder/facebook-ads-library-scraper
 export interface MetaAdResult {
-  id: string;
-  pageId: string;
-  pageName: string;
-  pageProfilePictureUrl?: string;
-  pageUrl?: string;
-  adArchiveId: string;
-  adCreativeBody?: string;
-  adCreativeLinkCaption?: string;
-  adCreativeLinkDescription?: string;
-  adCreativeLinkTitle?: string;
-  callToActionType?: string;
-  adDeliveryStartTime?: string;
-  adDeliveryStopTime?: string;
-  estimatedAudienceSize?: {
-    lower_bound?: number;
-    upper_bound?: number;
+  ad_archive_id: string;
+  page_id: string;
+  page_name: string;
+  is_active: boolean;
+  start_date: number; // Unix timestamp
+  end_date: number;   // Unix timestamp
+  start_date_formatted?: string;
+  end_date_formatted?: string;
+  publisher_platform?: string[];
+  snapshot: {
+    page_id: string;
+    page_name: string;
+    page_profile_uri?: string;
+    page_profile_picture_url?: string;
+    body?: { text?: string };
+    title?: string;
+    link_url?: string;
+    link_description?: string;
+    caption?: string;
+    cta_text?: string;
+    cta_type?: string;
+    cards?: Array<{
+      body?: string;
+      title?: string;
+      link_url?: string;
+      link_description?: string;
+      cta_text?: string;
+      caption?: string;
+      video_hd_url?: string;
+      video_sd_url?: string;
+      video_preview_image_url?: string;
+      original_image_url?: string;
+      resized_image_url?: string;
+    }>;
+    images?: Array<{
+      original_image_url?: string;
+      resized_image_url?: string;
+    }>;
+    videos?: Array<{
+      video_hd_url?: string;
+      video_sd_url?: string;
+      video_preview_image_url?: string;
+    }>;
   };
-  impressions?: {
-    lower_bound?: number;
-    upper_bound?: number;
+  impressions_with_index?: {
+    impressions_text?: string;
+    impressions_index?: number;
   };
   spend?: {
     lower_bound?: number;
     upper_bound?: number;
   };
-  currency?: string;
-  images?: Array<{
-    url: string;
-    resizedUrl?: string;
-  }>;
-  videos?: Array<{
-    videoHd?: string;
-    videoSd?: string;
-    videoPreviewImageUrl?: string;
-  }>;
-  targetLocations?: string[];
-  targetAges?: string;
-  targetGenders?: string;
-  publisherPlatforms?: string[];
+  reach_estimate?: {
+    lower_bound?: number;
+    upper_bound?: number;
+  };
+  targeted_or_reached_countries?: string[];
+  ad_library_url?: string;
 }
 
 /**
@@ -147,6 +167,11 @@ export async function getMetaScrapeResults(runId: string): Promise<{
 }> {
   const { status, results } = await apifyClient.waitForRunAndGetResults<MetaAdResult>(runId);
 
+  console.log('Meta scrape results count:', results.length);
+  if (results.length > 0) {
+    console.log('Sample result:', JSON.stringify(results[0], null, 2).substring(0, 500));
+  }
+
   if (status !== 'completed' || results.length === 0) {
     return { status, ads: [], advertisers: [] };
   }
@@ -156,76 +181,108 @@ export async function getMetaScrapeResults(runId: string): Promise<{
   const ads: NewAd[] = [];
 
   for (const result of results) {
+    // Skip if no page_id
+    if (!result.page_id) {
+      console.warn('Skipping result with no page_id');
+      continue;
+    }
+
     // Create or update advertiser
-    if (!advertiserMap.has(result.pageId)) {
-      advertiserMap.set(result.pageId, {
-        id: result.pageId,
+    if (!advertiserMap.has(result.page_id)) {
+      advertiserMap.set(result.page_id, {
+        id: result.page_id,
         platform: 'meta',
-        name: result.pageName,
-        pageUrl: result.pageUrl || `https://facebook.com/${result.pageId}`,
+        name: result.page_name || result.snapshot?.page_name || 'Unknown',
+        pageUrl: result.snapshot?.page_profile_uri || `https://facebook.com/${result.page_id}`,
         firstSeenAt: new Date().toISOString(),
         lastScrapedAt: new Date().toISOString(),
         isTracked: false,
       });
     }
 
-    // Determine media type and URLs
+    // Determine media type and URLs from snapshot
     let mediaType: 'image' | 'video' | 'carousel' = 'image';
     const mediaUrls: string[] = [];
     let thumbnailUrl: string | undefined;
 
-    if (result.videos && result.videos.length > 0) {
-      mediaType = 'video';
-      for (const video of result.videos) {
-        if (video.videoHd) mediaUrls.push(video.videoHd);
-        else if (video.videoSd) mediaUrls.push(video.videoSd);
-        if (!thumbnailUrl && video.videoPreviewImageUrl) {
-          thumbnailUrl = video.videoPreviewImageUrl;
+    const snapshot = result.snapshot;
+
+    // Check cards first (most common)
+    if (snapshot?.cards && snapshot.cards.length > 0) {
+      const hasVideos = snapshot.cards.some(c => c.video_hd_url || c.video_sd_url);
+      mediaType = hasVideos ? 'video' : (snapshot.cards.length > 1 ? 'carousel' : 'image');
+
+      for (const card of snapshot.cards) {
+        if (card.video_hd_url) mediaUrls.push(card.video_hd_url);
+        else if (card.video_sd_url) mediaUrls.push(card.video_sd_url);
+        else if (card.original_image_url) mediaUrls.push(card.original_image_url);
+        else if (card.resized_image_url) mediaUrls.push(card.resized_image_url);
+
+        if (!thumbnailUrl) {
+          thumbnailUrl = card.video_preview_image_url || card.resized_image_url;
         }
       }
-    } else if (result.images && result.images.length > 0) {
-      mediaType = result.images.length > 1 ? 'carousel' : 'image';
-      for (const image of result.images) {
-        mediaUrls.push(image.url);
+    }
+    // Check videos
+    else if (snapshot?.videos && snapshot.videos.length > 0) {
+      mediaType = 'video';
+      for (const video of snapshot.videos) {
+        if (video.video_hd_url) mediaUrls.push(video.video_hd_url);
+        else if (video.video_sd_url) mediaUrls.push(video.video_sd_url);
+        if (!thumbnailUrl && video.video_preview_image_url) {
+          thumbnailUrl = video.video_preview_image_url;
+        }
       }
-      thumbnailUrl = result.images[0]?.resizedUrl || result.images[0]?.url;
+    }
+    // Check images
+    else if (snapshot?.images && snapshot.images.length > 0) {
+      mediaType = snapshot.images.length > 1 ? 'carousel' : 'image';
+      for (const image of snapshot.images) {
+        if (image.original_image_url) mediaUrls.push(image.original_image_url);
+        else if (image.resized_image_url) mediaUrls.push(image.resized_image_url);
+      }
+      thumbnailUrl = snapshot.images[0]?.resized_image_url || snapshot.images[0]?.original_image_url;
     }
 
-    // Calculate days running
+    // Calculate days running from timestamps
     let daysRunning: number | undefined;
-    if (result.adDeliveryStartTime) {
-      const startDate = new Date(result.adDeliveryStartTime);
-      const endDate = result.adDeliveryStopTime
-        ? new Date(result.adDeliveryStopTime)
-        : new Date();
+    if (result.start_date) {
+      const startDate = new Date(result.start_date * 1000);
+      const endDate = result.end_date ? new Date(result.end_date * 1000) : new Date();
       daysRunning = Math.ceil(
         (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
       );
     }
 
+    // Get body text from snapshot
+    const bodyText = snapshot?.body?.text ||
+      snapshot?.cards?.[0]?.body ||
+      snapshot?.link_description ||
+      null;
+
     ads.push({
       id: nanoid(),
       platform: 'meta',
-      advertiserId: result.pageId,
-      externalId: result.adArchiveId,
-      headline: result.adCreativeLinkTitle || null,
-      bodyText: result.adCreativeBody || null,
-      ctaText: result.callToActionType || null,
-      landingUrl: result.adCreativeLinkCaption || null,
+      advertiserId: result.page_id,
+      externalId: result.ad_archive_id,
+      headline: snapshot?.title || snapshot?.cards?.[0]?.title || null,
+      bodyText,
+      ctaText: snapshot?.cta_text || snapshot?.cards?.[0]?.cta_text || null,
+      landingUrl: snapshot?.link_url || snapshot?.cards?.[0]?.link_url || null,
       mediaType,
       mediaUrls: JSON.stringify(mediaUrls),
-      thumbnailUrl: thumbnailUrl || null,
-      impressionsMin: result.impressions?.lower_bound || null,
-      impressionsMax: result.impressions?.upper_bound || null,
+      thumbnailUrl: thumbnailUrl || snapshot?.page_profile_picture_url || null,
+      impressionsMin: result.reach_estimate?.lower_bound || null,
+      impressionsMax: result.reach_estimate?.upper_bound || null,
       likes: null,
       comments: null,
       shares: null,
       daysRunning: daysRunning || null,
-      countryTargeting: result.targetLocations
-        ? JSON.stringify(result.targetLocations)
+      countryTargeting: result.targeted_or_reached_countries
+        ? JSON.stringify(result.targeted_or_reached_countries)
         : null,
-      firstSeenAt: result.adDeliveryStartTime || null,
-      lastSeenAt: result.adDeliveryStopTime || null,
+      firstSeenAt: result.start_date_formatted || null,
+      lastSeenAt: result.end_date_formatted || null,
       scrapedAt: new Date().toISOString(),
       analysis: null,
     });

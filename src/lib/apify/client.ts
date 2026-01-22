@@ -23,12 +23,23 @@ interface ApifyRunStatus {
 }
 
 export class ApifyClient {
-  private token: string;
+  private _token: string | null = null;
+
+  private get token(): string {
+    if (this._token === null) {
+      this._token = process.env.APIFY_TOKEN || '';
+      if (!this._token) {
+        console.warn('APIFY_TOKEN not set - scraping will not work');
+      } else {
+        console.log('Apify client initialized with token:', this._token.substring(0, 15) + '...');
+      }
+    }
+    return this._token;
+  }
 
   constructor(token?: string) {
-    this.token = token || process.env.APIFY_TOKEN || '';
-    if (!this.token) {
-      console.warn('APIFY_TOKEN not set - scraping will not work');
+    if (token) {
+      this._token = token;
     }
   }
 
@@ -48,6 +59,9 @@ export class ApifyClient {
 
     if (!response.ok) {
       const error = await response.text();
+      console.error('Apify API error:', response.status, error);
+      console.error('Request URL:', url);
+      console.error('Token used:', this.token.substring(0, 15) + '...');
       throw new Error(`Apify API error: ${response.status} - ${error}`);
     }
 
@@ -58,7 +72,11 @@ export class ApifyClient {
    * Start an actor run
    */
   async runActor(actorId: string, input: ApifyRunInput): Promise<ApifyRunResponse> {
-    return this.request<ApifyRunResponse>(`/acts/${actorId}/runs`, {
+    // Apify API uses ~ instead of / for actor IDs in URL paths
+    const encodedActorId = actorId.replace('/', '~');
+    console.log('Starting actor:', encodedActorId);
+    console.log('Input:', JSON.stringify(input, null, 2));
+    return this.request<ApifyRunResponse>(`/acts/${encodedActorId}/runs`, {
       method: 'POST',
       body: JSON.stringify(input),
     });
