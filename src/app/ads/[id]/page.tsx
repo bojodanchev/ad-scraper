@@ -1,12 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { AnalysisPanel } from '@/components/analysis/analysis-panel';
+import { RemixForm } from '@/components/generation/generate-form';
 
 interface Ad {
   id: string;
@@ -43,10 +52,12 @@ function formatNumber(num: number): string {
 
 export default function AdDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const [ad, setAd] = useState<Ad | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRemixDialog, setShowRemixDialog] = useState(false);
 
   const loadAd = async () => {
     try {
@@ -98,6 +109,38 @@ export default function AdDetailPage() {
               <Button variant="outline">View Landing Page</Button>
             </a>
           )}
+          <Link href={`/generate?adId=${ad.id}`}>
+            <Button variant="outline">
+              <SparklesIcon className="w-4 h-4 mr-2" />
+              Generate Ad
+            </Button>
+          </Link>
+          <Dialog open={showRemixDialog} onOpenChange={setShowRemixDialog}>
+            <DialogTrigger asChild>
+              <Button>
+                <RefreshIcon className="w-4 h-4 mr-2" />
+                Remix Ad
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Remix This Ad</DialogTitle>
+                <DialogDescription>
+                  Create a new video inspired by this ad's winning formula
+                </DialogDescription>
+              </DialogHeader>
+              <RemixForm
+                adId={ad.id}
+                originalScript={ad.bodyText || undefined}
+                originalHook={ad.headline || undefined}
+                onSuccess={(jobId) => {
+                  setShowRemixDialog(false);
+                  router.push(`/queue/${jobId}`);
+                }}
+                onCancel={() => setShowRemixDialog(false)}
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -245,5 +288,22 @@ export default function AdDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Icons
+function SparklesIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
   );
 }

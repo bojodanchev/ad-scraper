@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import Link from 'next/link';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
+import { NavLinks } from '@/components/layout/nav-links';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -36,32 +37,7 @@ export default function RootLayout({
               <Link href="/" className="font-bold text-lg">
                 Ad Scraper
               </Link>
-              <nav className="flex items-center gap-6">
-                <Link
-                  href="/ads"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Library
-                </Link>
-                <Link
-                  href="/creators"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Creators
-                </Link>
-                <Link
-                  href="/scrape"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  New Scrape
-                </Link>
-                <Link
-                  href="/jobs"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Jobs
-                </Link>
-              </nav>
+              <NavLinks />
             </div>
           </header>
 

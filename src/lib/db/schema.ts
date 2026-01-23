@@ -133,3 +133,99 @@ export type NewCollectionAd = typeof collectionAds.$inferInsert;
 
 export type CreatorStat = typeof creatorStats.$inferSelect;
 export type NewCreatorStat = typeof creatorStats.$inferInsert;
+
+// ============================================================================
+// VIDEO AD GENERATION (Dual-Platform: TopView + Higgsfield)
+// ============================================================================
+
+// Track video generation jobs across both platforms
+export const generationJobs = sqliteTable('generation_jobs', {
+  id: text('id').primaryKey(),
+  sourceAdId: text('source_ad_id').references(() => ads.id), // Optional: linked scraped ad
+
+  // DUAL-PLATFORM TRACKING
+  platform: text('platform'), // 'topview' | 'higgsfield'
+  model: text('model'), // Model used (higgsfield models or 'topview-url', 'topview-avatar', etc.)
+
+  // Job status and type
+  status: text('status').notNull(), // 'pending' | 'generating' | 'review' | 'approved' | 'rejected' | 'failed'
+  inputType: text('input_type'), // 'url-to-video' | 'image-to-video' | 'text-to-video' | 'avatar' | 'product-avatar' | 'remix'
+  inputData: text('input_data'), // JSON: { productUrl, imageUrl, avatarId, script, prompt, offer }
+
+  // Platform-specific tracking IDs
+  topviewTaskId: text('tv_task_id'), // TopView task tracking
+  higgsfieldRequestId: text('hf_request_id'), // Higgsfield tracking
+
+  // Results
+  outputVideoUrl: text('output_video_url'),
+  previewUrl: text('preview_url'), // TopView preview thumbnails
+  generatedAt: text('generated_at'),
+  reviewedAt: text('reviewed_at'),
+  reviewNotes: text('review_notes'),
+
+  // Cost tracking
+  creditsUsed: integer('credits_used'),
+  estimatedCostUsd: text('estimated_cost_usd'),
+
+  // Error tracking
+  errorMessage: text('error_message'),
+  retryCount: integer('retry_count').default(0),
+
+  // Timestamps
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+});
+
+// Queue for pending generation jobs
+export const generationQueue = sqliteTable('generation_queue', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id')
+    .notNull()
+    .references(() => generationJobs.id),
+  platform: text('platform'), // 'topview' | 'higgsfield' - for routing
+  priority: integer('priority').default(0), // Higher = more urgent
+  scheduledFor: text('scheduled_for'), // ISO timestamp for delayed execution
+  attempts: integer('attempts').default(0),
+  maxAttempts: integer('max_attempts').default(3),
+  lastAttemptAt: text('last_attempt_at'),
+  lastError: text('last_error'),
+  createdAt: text('created_at'),
+});
+
+// Track TopView avatars for reuse
+export const topviewAvatars = sqliteTable('topview_avatars', {
+  id: text('id').primaryKey(),
+  topviewAvatarId: text('tv_avatar_id'), // TopView's avatar ID
+  name: text('name'),
+  description: text('description'),
+  sourceVideoUrl: text('source_video_url'), // Original video used to create avatar
+  previewUrl: text('preview_url'),
+  gender: text('gender'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at'),
+});
+
+// Track script remixes and variations
+export const scriptRemixes = sqliteTable('script_remixes', {
+  id: text('id').primaryKey(),
+  sourceAdId: text('source_ad_id').references(() => ads.id),
+  originalScript: text('original_script'),
+  remixedScript: text('remixed_script'),
+  offer: text('offer'), // The product/offer it was remixed for
+  variations: text('variations'), // JSON array of variation scripts
+  analysisData: text('analysis_data'), // JSON: hook, cta, emotional arc, etc.
+  createdAt: text('created_at'),
+});
+
+// Types for generation system
+export type GenerationJob = typeof generationJobs.$inferSelect;
+export type NewGenerationJob = typeof generationJobs.$inferInsert;
+
+export type GenerationQueueItem = typeof generationQueue.$inferSelect;
+export type NewGenerationQueueItem = typeof generationQueue.$inferInsert;
+
+export type TopviewAvatar = typeof topviewAvatars.$inferSelect;
+export type NewTopviewAvatar = typeof topviewAvatars.$inferInsert;
+
+export type ScriptRemix = typeof scriptRemixes.$inferSelect;
+export type NewScriptRemix = typeof scriptRemixes.$inferInsert;
