@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { Geist, Geist_Mono } from 'next/font/google';
 import Link from 'next/link';
 import './globals.css';
@@ -37,7 +38,9 @@ export default function RootLayout({
               <Link href="/" className="font-bold text-lg">
                 Ad Scraper
               </Link>
-              <NavLinks />
+              <Suspense fallback={<nav className="flex items-center gap-6 text-sm text-muted-foreground">Loading...</nav>}>
+                <NavLinks />
+              </Suspense>
             </div>
           </header>
 
