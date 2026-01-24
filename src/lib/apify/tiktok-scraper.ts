@@ -198,9 +198,16 @@ export async function getTikTokScrapeResults(
   for (const result of results) {
     // Create advertiser from author info
     const author = result.author;
-    const advertiserId = author?.id || author?.uniqueId || `tiktok_${nanoid(8)}`;
 
-    if (author?.uniqueId && !advertiserMap.has(advertiserId)) {
+    // Generate advertiser ID - prefer author.id, then uniqueId, skip if neither available
+    let advertiserId: string | null = null;
+    if (author?.id && author.id.trim() !== '') {
+      advertiserId = author.id;
+    } else if (author?.uniqueId && author.uniqueId.trim() !== '') {
+      advertiserId = author.uniqueId;
+    }
+
+    if (advertiserId && author?.uniqueId && !advertiserMap.has(advertiserId)) {
       // Calculate engagement rate if we have follower count
       let engagementRate: string | null = null;
       if (author.followerCount && author.followerCount > 0 && result.playCount) {
@@ -260,7 +267,7 @@ export async function getTikTokScrapeResults(
     ads.push({
       id: nanoid(),
       platform: 'tiktok',
-      advertiserId: author?.uniqueId ? advertiserId : null,
+      advertiserId: advertiserId, // null if no valid author ID
       externalId: result.id,
       headline: author?.nickname || null,  // Use creator name as "headline"
       bodyText: bodyText || null,

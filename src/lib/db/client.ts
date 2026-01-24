@@ -168,11 +168,32 @@ export async function initializeDatabase() {
   await c.execute(`CREATE INDEX IF NOT EXISTS idx_advertisers_followers ON advertisers(follower_count)`);
 }
 
-// Auto-initialize on first import
+// Auto-initialize on first import with mutex to prevent race conditions
 let initialized = false;
+let initializationPromise: Promise<void> | null = null;
+
 export async function ensureInitialized() {
-  if (!initialized) {
-    await initializeDatabase();
-    initialized = true;
+  // If already initialized, return immediately
+  if (initialized) {
+    return;
   }
+
+  // If initialization is in progress, wait for it
+  if (initializationPromise) {
+    await initializationPromise;
+    return;
+  }
+
+  // Start initialization with mutex lock
+  initializationPromise = initializeDatabase()
+    .then(() => {
+      initialized = true;
+    })
+    .catch((err) => {
+      // Reset promise so next call can retry
+      initializationPromise = null;
+      throw err;
+    });
+
+  await initializationPromise;
 }

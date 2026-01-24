@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/jobs', label: 'Scrape Jobs' },
   { href: '/generate', label: 'Generate', highlight: true },
   { href: '/queue', label: 'Queue', showBadge: true },
+  { href: '/docs', label: 'Docs' },
 ];
 
 export function NavLinks() {

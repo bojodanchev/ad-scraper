@@ -214,9 +214,9 @@ export async function getMetaScrapeResults(
   const ads: NewAd[] = [];
 
   for (const result of results) {
-    // Skip if no page_id
-    if (!result.page_id) {
-      console.warn('Skipping result with no page_id');
+    // Skip if no page_id or empty page_id
+    if (!result.page_id || result.page_id.trim() === '') {
+      console.warn('Skipping result with empty/null page_id');
       continue;
     }
 

@@ -48,13 +48,13 @@ export async function POST() {
 
         if (run.status === 'SUCCEEDED') {
           // Apify completed but we didn't process results
-          // Mark as failed since we can't recover the results processing
+          // Mark as failed but provide retry instructions
           await db
             .update(scrapeJobs)
             .set({
               status: 'failed',
               completedAt: new Date().toISOString(),
-              error: 'Apify completed but result processing failed - data may be in Apify console',
+              error: 'Apify completed but result processing failed. Retry via POST /api/jobs/' + job.id + '/retry (data available for 7 days)',
             })
             .where(eq(scrapeJobs.id, job.id));
           recovered.push(job.id);

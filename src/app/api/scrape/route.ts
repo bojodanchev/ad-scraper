@@ -9,6 +9,28 @@ import { eq } from 'drizzle-orm';
 
 export const maxDuration = 300; // 5 minutes for Vercel Pro
 
+// Simple retry helper for transient database failures
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxAttempts = 3,
+  delayMs = 1000
+): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxAttempts) {
+        console.warn(`DB operation failed (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms:`, lastError.message);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        delayMs *= 2; // Exponential backoff
+      }
+    }
+  }
+  throw lastError;
+}
+
 // Combined filter options for all platforms
 interface ScrapeFilters {
   timePeriodDays?: number;
@@ -164,23 +186,42 @@ export async function POST(request: NextRequest) {
 }
 
 async function processResults(jobId: string, platform: string, runId: string, filters: ScrapeFilters) {
+  // Track processing stats for better visibility
+  const stats = {
+    advertisersTotal: 0,
+    advertisersProcessed: 0,
+    advertisersSkipped: 0,
+    adsTotal: 0,
+    adsInserted: 0,
+    adsSkipped: 0,
+    adsDuplicate: 0,
+    errors: [] as string[],
+  };
+
   // Wrap everything in try-catch to ALWAYS update job status
   const markJobFailed = async (errorMsg: string) => {
     try {
-      await db
-        .update(scrapeJobs)
-        .set({
-          status: 'failed',
-          completedAt: new Date().toISOString(),
-          error: errorMsg,
-        })
-        .where(eq(scrapeJobs.id, jobId));
+      console.error(`Job ${jobId} failed:`, errorMsg);
+      console.error('Stats at failure:', JSON.stringify(stats));
+      // Use retry wrapper for critical status update
+      await withRetry(() =>
+        db
+          .update(scrapeJobs)
+          .set({
+            status: 'failed',
+            completedAt: new Date().toISOString(),
+            error: errorMsg,
+          })
+          .where(eq(scrapeJobs.id, jobId))
+      );
     } catch (dbErr) {
-      console.error('Failed to update job status:', dbErr);
+      console.error('CRITICAL: Failed to update job status after retries:', dbErr);
     }
   };
 
   try {
+    console.log(`Processing results for job ${jobId}, platform: ${platform}, runId: ${runId}`);
+
     let result;
 
     if (platform === 'meta') {
@@ -209,16 +250,29 @@ async function processResults(jobId: string, platform: string, runId: string, fi
       return;
     }
 
+    console.log(`Job ${jobId}: Apify returned status=${result.status}, ads=${result.ads.length}, advertisers=${result.advertisers.length}`);
+
     if (result.status !== 'completed') {
-      await markJobFailed(`Scrape ${result.status}`);
+      // Provide more helpful error messages
+      let errorMsg = `Scrape ${result.status}`;
+      if (result.status === 'timeout') {
+        errorMsg = 'Apify run timed out - try again or increase maxItems. You can retry via POST /api/jobs/{id}/retry once Apify completes.';
+      } else if (result.status === 'failed') {
+        errorMsg = 'Apify run failed - check Apify console for details';
+      }
+      await markJobFailed(errorMsg);
       return;
     }
 
+    stats.advertisersTotal = result.advertisers.length;
+    stats.adsTotal = result.ads.length;
+
     // Insert advertisers (upsert) - skip invalid entries
     for (const advertiser of result.advertisers) {
-      // Validate advertiser.id before DB lookup
-      if (!advertiser.id) {
-        console.warn('Skipping advertiser with no ID');
+      // Validate advertiser.id before DB lookup - must be non-empty string
+      if (!advertiser.id || advertiser.id === '' || advertiser.id.trim() === '') {
+        console.warn(`Job ${jobId}: Skipping advertiser with empty/null ID`);
+        stats.advertisersSkipped++;
         continue;
       }
 
@@ -260,14 +314,16 @@ async function processResults(jobId: string, platform: string, runId: string, fi
             .set(updateData)
             .where(eq(advertisers.id, advertiser.id));
         }
+        stats.advertisersProcessed++;
       } catch (advErr) {
-        console.error('Error processing advertiser:', advertiser.id, advErr);
-        // Continue processing other advertisers
+        const errMsg = advErr instanceof Error ? advErr.message : 'Unknown error';
+        console.error(`Job ${jobId}: Error processing advertiser ${advertiser.id}:`, errMsg);
+        stats.advertisersSkipped++;
+        stats.errors.push(`Advertiser ${advertiser.id}: ${errMsg}`);
       }
     }
 
     // Insert ads (check for duplicates by external ID)
-    let insertedCount = 0;
     for (const ad of result.ads) {
       try {
         if (ad.externalId) {
@@ -277,28 +333,45 @@ async function processResults(jobId: string, platform: string, runId: string, fi
             .where(eq(ads.externalId, ad.externalId))
             .limit(1);
 
-          if (existing.length > 0) continue;
+          if (existing.length > 0) {
+            stats.adsDuplicate++;
+            continue;
+          }
         }
 
         await db.insert(ads).values(ad);
-        insertedCount++;
+        stats.adsInserted++;
       } catch (adErr) {
-        console.error('Error inserting ad:', ad.externalId, adErr);
-        // Continue processing other ads
+        const errMsg = adErr instanceof Error ? adErr.message : 'Unknown error';
+        console.error(`Job ${jobId}: Error inserting ad ${ad.externalId}:`, errMsg);
+        stats.adsSkipped++;
+        stats.errors.push(`Ad ${ad.externalId || 'unknown'}: ${errMsg}`);
       }
     }
 
-    // Update job status
-    await db
-      .update(scrapeJobs)
-      .set({
-        status: 'completed',
-        adsFound: insertedCount,
-        completedAt: new Date().toISOString(),
-      })
-      .where(eq(scrapeJobs.id, jobId));
+    console.log(`Job ${jobId} completed:`, JSON.stringify(stats));
+
+    // Build error message if there were partial failures
+    let errorMsg: string | null = null;
+    if (stats.errors.length > 0) {
+      errorMsg = `Partial success: ${stats.adsInserted}/${stats.adsTotal} ads, ${stats.errors.length} errors`;
+    }
+
+    // Update job status with retry for reliability
+    await withRetry(() =>
+      db
+        .update(scrapeJobs)
+        .set({
+          status: 'completed',
+          adsFound: stats.adsInserted,
+          completedAt: new Date().toISOString(),
+          error: errorMsg,
+        })
+        .where(eq(scrapeJobs.id, jobId))
+    );
   } catch (error) {
-    console.error('Process results error:', error);
-    await markJobFailed(error instanceof Error ? error.message : 'Unknown error');
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Job ${jobId} process results error:`, error);
+    await markJobFailed(`Processing error: ${errorMsg}`);
   }
 }

@@ -195,10 +195,16 @@ export async function getInstagramScrapeResults(
   const ads: NewAd[] = [];
 
   for (const result of results) {
-    // Create advertiser from owner info
-    const advertiserId = result.ownerId || result.ownerUsername || `ig_${nanoid(8)}`;
+    // Create advertiser from owner info - prefer ownerId, then ownerUsername
+    // Skip generating random IDs - if we don't have real data, don't create fake advertisers
+    let advertiserId: string | null = null;
+    if (result.ownerId && result.ownerId.trim() !== '') {
+      advertiserId = result.ownerId;
+    } else if (result.ownerUsername && result.ownerUsername.trim() !== '') {
+      advertiserId = result.ownerUsername;
+    }
 
-    if (result.ownerUsername && !advertiserMap.has(advertiserId)) {
+    if (advertiserId && result.ownerUsername && !advertiserMap.has(advertiserId)) {
       advertiserMap.set(advertiserId, {
         id: advertiserId,
         platform: 'instagram',
@@ -270,7 +276,7 @@ export async function getInstagramScrapeResults(
     ads.push({
       id: nanoid(),
       platform: 'instagram',
-      advertiserId: result.ownerUsername ? advertiserId : null,
+      advertiserId: advertiserId, // null if no valid owner ID
       externalId: result.shortCode || result.id,
       headline: result.ownerFullName || result.ownerUsername || null,
       bodyText: bodyText || null,

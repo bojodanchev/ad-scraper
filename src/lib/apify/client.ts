@@ -105,7 +105,7 @@ export class ApifyClient {
   async waitForRunAndGetResults<T>(
     runId: string,
     pollInterval = 5000,
-    maxWait = 300000 // 5 minutes
+    maxWait = 900000 // 15 minutes - increased from 5 min for large scrapes
   ): Promise<{ status: string; results: T[] }> {
     const startTime = Date.now();
 
