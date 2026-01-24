@@ -30,3 +30,11 @@ Ad Scraper is a tool that helps you find and save high-performing ads and viral 
 - [Scraping Guide](./scraping.md) - How to run effective scrapes
 - [Troubleshooting](./troubleshooting.md) - Fix common issues
 - [API Reference](./api.md) - For developers
+
+---
+
+## Internal Team Documentation
+
+Documentation for other StorePro traffic systems:
+
+- [Telegram Automation Architecture](./telegram-automation-architecture.md) - Mother-slave funnel system for Telegram member acquisition

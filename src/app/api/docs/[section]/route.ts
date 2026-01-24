@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import path from 'path';
 
-const VALID_SECTIONS = ['overview', 'platforms', 'scraping', 'troubleshooting', 'api', 'changelog'];
+const VALID_SECTIONS = ['overview', 'platforms', 'scraping', 'telegram', 'troubleshooting', 'api', 'changelog'];
 
 export async function GET(
   request: NextRequest,

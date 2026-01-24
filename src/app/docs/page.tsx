@@ -32,6 +32,12 @@ const DOC_SECTIONS: DocSection[] = [
     icon: '🔍',
   },
   {
+    id: 'telegram',
+    title: 'Telegram Automation',
+    description: 'Mother-slave funnel architecture and setup',
+    icon: '📨',
+  },
+  {
     id: 'troubleshooting',
     title: 'Troubleshooting',
     description: 'Fix common issues and errors',
