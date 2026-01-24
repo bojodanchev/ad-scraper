@@ -1,574 +1,281 @@
-# Telegram Automation Architecture
+# Telegram Automation
 
-Internal documentation for the Telegram mother-slave funnel system.
+## What is Telegram Automation?
 
-**Last Updated:** 2026-01-24
-
----
-
-## Overview
-
-The Telegram automation system implements a **mother-slave funnel** for member acquisition at scale. Members are scraped from target groups, added to disposable "slave" groups, then redirected to a protected "mother" group via welcome messages.
+Telegram Automation is a member acquisition system that uses the **mother-slave funnel** method. It scrapes members from target groups in your niche and funnels them to your protected community.
 
 **Key Stats:**
-- Cost: ~$0.01 CPL at scale
+- Cost: ~$0.01 per lead at scale
 - Capacity: 10,000-50,000 members/month
 - Account pool: 20-30 rotating accounts
 
 ---
 
-## The Mother-Slave Funnel
+## How the Funnel Works
 
 ```
-TARGET GROUPS (AI/MMO/Ecom keywords)
+TARGET GROUPS (AI, MMO, Ecom niches)
          |
-         | GroupFinder.searchByNiche()
-         | MemberExtractor.extractFromGroup()
-         v
-    MEMBER QUEUE (members.json)
-         |
-         | MemberAdder.addBatch() -> 45s between adds
-         | AccountPool.getNextAccount() -> round-robin
+         | Scrape members from public groups
          v
     SLAVE GROUPS (disposable buffer)
          |
-         | Welcome message with mother link
-         | User clicks -> organic join
+         | Welcome message redirects them
          v
-    MOTHER GROUP (protected destination)
+    MOTHER GROUP (your protected community)
          |
          v
     Your funnels ($99 offers, calls)
 ```
 
-### Why This Architecture Works
+### Why This Architecture?
 
-1. **Slaves = Buffer Layer** - If banned, create replacement in 5 min (costs $0)
-2. **Mother = Safe Zone** - Never has bot activity, members join organically
-3. **Account Rotation** - One ban doesn't kill the system
-4. **Health Tracking** - Prevents pushing accounts to permanent ban
-5. **Niche Targeting** - AI groups -> AI buyers, quality leads
-
----
-
-## Directory Structure
-
-```
-telegram-automation/
-├── src/
-│   ├── core/                    # System orchestration & monitoring
-│   │   ├── orchestrator.ts      # Main coordinator (334 lines)
-│   │   ├── health-monitor.ts    # Account/group health (142 lines)
-│   │   └── reporter.ts          # Daily statistics (165 lines)
-│   │
-│   ├── scraper/                 # Member acquisition pipeline
-│   │   ├── group-finder.ts      # Find target groups (126 lines)
-│   │   ├── member-extractor.ts  # Extract members (206 lines)
-│   │   └── queue-manager.ts     # Manage queue (75 lines)
-│   │
-│   ├── accounts/                # Account pool management
-│   │   └── pool-manager.ts      # 20-30 account rotation (283 lines)
-│   │
-│   ├── groups/                  # Group management
-│   │   ├── slave-manager.ts     # Disposable slave groups (235 lines)
-│   │   ├── mother-manager.ts    # Protected mother group (84 lines)
-│   │   └── adder.ts             # Add members with retry (168 lines)
-│   │
-│   ├── services/                # External integrations
-│   │   └── telegram-client.ts   # gramjs wrapper (245 lines)
-│   │
-│   ├── utils/                   # Shared utilities
-│   │   ├── config.ts            # Rate limits & keywords (73 lines)
-│   │   ├── data-store.ts        # JSON persistence (122 lines)
-│   │   ├── retry.ts             # Exponential backoff (239 lines)
-│   │   ├── proxy-manager.ts     # Proxy configuration
-│   │   └── sms-providers.ts     # DaisySMS/SMSPool integration
-│   │
-│   └── types/                   # TypeScript definitions
-│       └── index.ts             # All type interfaces (183 lines)
-│
-├── scripts/                     # CLI tools
-│   ├── add-account.ts           # Add single account
-│   ├── create-accounts.ts       # Bulk create via SMS providers
-│   ├── setup-mother.ts          # Configure mother group
-│   ├── create-slave.ts          # Create slave group
-│   └── run-campaign.ts          # Main campaign runner
-│
-└── data/                        # JSON storage (persistent)
-    ├── accounts.json            # Account pool with health
-    ├── slaves.json              # Slave groups
-    ├── mother.json              # Mother group config
-    ├── members.json             # Scraped members
-    ├── processed.json           # Members already added
-    ├── blacklist.json           # Blocked members
-    ├── groups.json              # Target groups found
-    └── daily-stats.json         # Historical reports
-```
+| Component | Purpose | Benefit |
+|-----------|---------|---------|
+| **Target Groups** | Source of leads | Find people interested in your niche |
+| **Slave Groups** | Buffer layer | If banned, create a new one in 5 min |
+| **Mother Group** | Main community | Never has bot activity, stays safe |
+| **Account Pool** | Rotating accounts | One ban doesn't kill the system |
 
 ---
 
-## Core Data Types
+## Getting Started
 
-### Account Types
+### Step 1: Get Telegram API Credentials
 
-```typescript
-type AccountStatus = 'warming' | 'active' | 'cooldown' | 'banned' | 'retired'
+1. Go to [my.telegram.org](https://my.telegram.org)
+2. Log in with your phone number
+3. Click "API development tools"
+4. Create a new application
+5. Save your **API ID** and **API Hash**
 
-TelegramAccount {
-  id: string                     // UUID
-  phone: string                  // +1234567890
-  sessionString: string          // Encrypted session token
-  apiId: number                  // Telegram API ID
-  apiHash: string                // Telegram API hash
-  proxy?: ProxyConfig            // SOCKS5 proxy
-  status: AccountStatus
-  healthScore: number            // 0-100 (100 = perfect)
-  dailyAdds: number              // Reset daily at midnight
-  dailyJoins: number
-  dailyMessages: number
-  lastUsed: string               // ISO timestamp
-  warmupStarted?: string
-  cooldownUntil?: string         // When cooldown expires
-  assignedSlaves: string[]       // Slave IDs this account created
-  createdAt: string
-  notes?: string
-}
+### Step 2: Add Accounts to Your Pool
+
+Run the account setup wizard:
+
+```bash
+cd telegram-automation
+npm run add-account
 ```
 
-### Member Types
+You'll need:
+- Phone number (with access to SMS)
+- Your API ID and API Hash
+- (Optional) SOCKS5 proxy for the account
 
-```typescript
-type MemberStatus = 'queued' | 'added' | 'failed' | 'blacklisted'
+**Recommended:** Add 20-30 accounts for safe scaling.
 
-ScrapedMember {
-  id: string                     // UUID
-  oduserId: string               // Telegram user ID
-  username?: string
-  firstName?: string
-  lastName?: string
-  sourceGroup: string            // Which target group they came from
-  sourceNiche: Niche
-  scrapedAt: string
-  status: MemberStatus
-  addedTo?: string               // Slave group ID (after adding)
-  addedAt?: string
-  addedBy?: string               // Account ID that added them
-  failReason?: string
-}
+### Step 3: Set Up Your Mother Group
+
+Create your protected community:
+
+```bash
+npm run setup-mother
 ```
 
-### Group Types
+This configures where all your leads ultimately go.
 
-```typescript
-type Niche = 'ai' | 'mmo' | 'ecom' | 'other'
-type GroupStatus = 'active' | 'warned' | 'banned' | 'retired'
+### Step 4: Create Slave Groups
 
-SlaveGroup {
-  id: string
-  chatId: string                 // Telegram chat ID
-  username: string
-  title: string
-  niche: Niche
-  inviteLink: string
-  motherLink: string             // Redirect destination
-  welcomeMessage: string         // Auto-sent with {MOTHER_LINK}
-  status: GroupStatus
-  memberCount: number
-  redirectCount: number          // How many joined mother
-  createdAt: string
-  createdBy: string              // Account ID
-  lastHealthCheck: string
-}
+Create 3-5 slave groups per niche:
+
+```bash
+npm run create-slave
 ```
+
+Choose a niche (AI, MMO, or Ecom) and the system will:
+- Create a group with niche-appropriate title
+- Set up a welcome message with mother group link
+- Connect it to your funnel
 
 ---
 
-## Key Components
+## Running Campaigns
 
-### Orchestrator (`src/core/orchestrator.ts`)
+### Full Campaign (Recommended)
 
-Main coordinator that wires all components together.
+Runs the complete cycle: scrape, add, and report
 
-```typescript
-class Orchestrator {
-  - accountPool: AccountPool
-  - groupFinder: GroupFinder
-  - memberExtractor: MemberExtractor
-  - queueManager: QueueManager
-  - slaveManager: SlaveManager
-  - motherManager: MotherManager
-  - memberAdder: MemberAdder
-  - healthMonitor: HealthMonitor
-  - reporter: Reporter
-
-  async initialize()           // Shows system status at startup
-  async runScrapeCycle(niche?) // Find groups, extract members
-  async runAddingCycle()       // Add queued members to slaves
-  startScheduler()             // Start cron jobs
-  async stop()                 // Clean shutdown
-}
+```bash
+npm run campaign
 ```
 
-**Scheduler (node-cron):**
+### Individual Steps
+
+| Command | What It Does |
+|---------|--------------|
+| `npm run campaign:scrape` | Find target groups and extract members |
+| `npm run campaign:scrape ai` | Scrape only AI niche groups |
+| `npm run campaign:add` | Add queued members to slave groups |
+| `npm run report` | Generate daily stats report |
+
+### Daemon Mode (Automated)
+
+Run continuously with scheduled operations:
+
+```bash
+npm run campaign:daemon
+```
+
+**Schedule:**
 - Health check: Every 5 minutes
 - Adding cycle: Hourly (8am-10pm)
 - Daily report: 10pm
-- Reset counters: Midnight
-
-### Account Pool (`src/accounts/pool-manager.ts`)
-
-Manages 20-30 Telegram accounts with rotation and health tracking.
-
-```typescript
-class AccountPool {
-  getAll()                     // All accounts
-  getActive()                  // Status: 'active'
-  getAvailableForAdding()      // Active + under daily limit + healthy
-  getNextAccount()             // Round-robin: least-recently-used
-
-  async getClient(id)          // Get connected TelegramClient
-  async disconnectClient(id)   // Clean disconnect
-
-  incrementDailyAdds(id)       // Track +1 add
-  updateStatus(id, status)     // warming -> active -> cooldown -> banned
-  decrementHealth(id, amount)  // Reduce health on errors
-  resetDailyCounters()         // Called at midnight
-  checkCooldowns()             // Release accounts from cooldown
-}
-```
-
-**Health Score System:**
-- Starts at 100
-- -5 to -20 on errors (depends on severity)
-- Auto-cooldown when score < 20
-- Recovery: +20 per cooldown period
-
-### Member Adder (`src/groups/adder.ts`)
-
-Adds members to slave groups with intelligent retry and error handling.
-
-**Error Handling Strategy:**
-
-| Error | Action |
-|-------|--------|
-| `FLOOD_WAIT_X` | Put account in cooldown, wait X seconds |
-| `PEER_FLOOD` | -20 health, immediate cooldown (serious) |
-| `USER_PRIVACY_RESTRICTED` | Mark failed, skip user |
-| `USER_BANNED_IN_CHANNEL` | Blacklist user |
-| `CHAT_ADMIN_REQUIRED` | Log warning (slave needs admin rights) |
-| `USER_NOT_MUTUAL_CONTACT` | Mark failed (user restricts adds) |
-| `USER_CHANNELS_TOO_MUCH` | Mark failed (user in too many groups) |
-| Network/timeout | Retry with exponential backoff |
-
-### Slave Manager (`src/groups/slave-manager.ts`)
-
-Manages disposable slave groups for member funneling.
-
-**Slave Titles per Niche:**
-- AI: "AI Wealth Hub", "AI Automation Pro", "AI Business Secrets"
-- MMO: "Cash Flow Crew", "Income Insiders", "Wealth Builders"
-- Ecom: "Ecom Insiders", "Dropship Elite", "Seller Success"
-
-**Welcome Templates (with {MOTHER_LINK} placeholder):**
-```
-AI: "Welcome to AI Wealth Hub!
-We've moved to a bigger, better community.
-Join us: {MOTHER_LINK}"
-
-MMO: "Welcome to Cash Flow Crew!
-Our main community has way more value.
-Join: {MOTHER_LINK}"
-
-Ecom: "Welcome to Ecom Insiders!
-The real action is in our main group.
-Join: {MOTHER_LINK}"
-```
+- Counter reset: Midnight
 
 ---
 
-## Rate Limits & Configuration
+## Understanding Account Health
 
-```typescript
-interface Config {
-  rateLimits: {
-    maxAddsPerAccountPerDay: 50        // Hard daily limit
-    maxJoinsPerAccountPerDay: 10
-    maxMessagesPerAccountPerDay: 30
-    maxScrapesPerDay: 30
-    delayBetweenAddsMs: 45000          // 45 seconds between adds
-    delayBetweenJoinsMs: 60000         // 60 seconds between joins
-    cooldownHours: 48                  // Duration of cooldown
-    healthThreshold: 20                // Health < 20 = auto-cooldown
-  },
-  warmupDays: 14,                       // New accounts need 14 days
-  targetNiches: ['ai', 'mmo', 'ecom'],
-  searchKeywords: {
-    ai: ['AI tools', 'ChatGPT', 'AI business', 'automation', 'AI money'],
-    mmo: ['passive income', 'side hustle', 'make money online', 'online business'],
-    ecom: ['dropshipping', 'Shopify', 'Amazon FBA', 'ecommerce']
-  }
-}
-```
+### Health Score
+
+| Score | Status | What It Means |
+|-------|--------|---------------|
+| 80-100 | Healthy | Good to go |
+| 50-79 | Caution | Slow down activity |
+| 20-49 | At Risk | Reduce usage |
+| 0-19 | Cooldown | Auto-paused for 48h |
+
+### Account Status
+
+| Status | Meaning |
+|--------|---------|
+| **Warming** | New account (14-day warmup period) |
+| **Active** | Ready for adding members |
+| **Cooldown** | Temporarily paused (48h) |
+| **Banned** | Account is restricted |
+| **Retired** | Permanently removed from pool |
 
 ---
 
-## CLI Commands
+## Rate Limits & Safety
 
-### Setup Commands
+### Daily Limits Per Account
 
-```bash
-# Add single account (interactive)
-npm run add-account
-
-# Configure mother group
-npm run setup-mother
-
-# Create slave group
-npm run create-slave
-
-# Bulk create accounts via SMS provider
-npm run create-accounts -- --count 20 --provider smspool --country UK
-```
-
-### Campaign Commands
-
-```bash
-# Full cycle: scrape + add + report
-npm run campaign
-
-# Scrape only (find groups, extract members)
-npm run campaign:scrape
-npm run campaign:scrape ai    # Single niche
-
-# Add only (process queue)
-npm run campaign:add
-
-# Daemon mode (runs scheduler)
-npm run campaign:daemon
-
-# Generate report
-npm run report
-```
-
----
-
-## Data Flow Walkthrough
-
-### Full Campaign Run
-
-```
-1. INITIALIZATION
-   ├─ Load accounts, slaves, mother
-   ├─ Show system status
-   └─ Run health check
-
-2. SCRAPE CYCLE
-   ├─ GroupFinder.searchByNiche('ai')
-   │  ├─ Get account from pool (round-robin)
-   │  ├─ Connect TelegramClient with proxy
-   │  ├─ Search keywords: "AI tools", "ChatGPT", etc.
-   │  ├─ Find groups (max 20 per keyword)
-   │  ├─ Dedup & store in groups.json
-   │  └─ 5s delay between keywords
-   │
-   ├─ Repeat for 'mmo', 'ecom' niches
-   └─ Disconnect client
-
-3. EXTRACTION CYCLE (for each unscraped group)
-   ├─ MemberExtractor.extractFromGroup(group)
-   │  ├─ Get account from pool
-   │  ├─ Join group (if has username)
-   │  ├─ Fetch members (limit 200)
-   │  ├─ For each member:
-   │  │  ├─ Check: already processed? -> skip
-   │  │  ├─ Check: blacklisted? -> skip
-   │  │  └─ Create ScrapedMember, status: 'queued'
-   │  ├─ Add to members.json
-   │  └─ Mark group.scraped = true
-   │
-   └─ 10s delay between groups
-
-4. ADDING CYCLE
-   ├─ QueueManager.getNextBatchAny(100)
-   │
-   ├─ MemberAdder.addBatch(members)
-   │  └─ For each member:
-   │     ├─ Get account (round-robin, healthy)
-   │     ├─ Select slave (least-populated)
-   │     │
-   │     ├─ Add member with retry:
-   │     │  ├─ withRetry(client.addUserToGroup())
-   │     │  ├─ Max 3 retries
-   │     │  ├─ Backoff: 2s -> 4s -> 8s
-   │     │  └─ FLOOD_WAIT handling
-   │     │
-   │     ├─ On success:
-   │     │  ├─ Mark member.status = 'added'
-   │     │  ├─ Increment slave.memberCount
-   │     │  ├─ Increment account.dailyAdds
-   │     │
-   │     ├─ On error:
-   │     │  ├─ Classify error
-   │     │  ├─ Mark failed or blacklist
-   │     │  ├─ Decrement account.healthScore
-   │     │
-   │     └─ 45s delay between adds
-   │
-   └─ Return { success, failed }
-
-5. HEALTH CHECK
-   ├─ Check cooldowns (release if expired)
-   ├─ Check slave redirect rates
-   └─ Print summary
-
-6. REPORT
-   ├─ Collect stats from all components
-   ├─ Save to daily-stats.json
-   └─ Print formatted report
-```
-
----
-
-## Scaling Characteristics
-
-### Per-Account Capacity
-
-```
-Daily limits (per account):
-- Adds: 50 members/day
-- Joins: 10 groups/day
-- Messages: 30 messages/day
-
-Delays between operations:
-- Between adds: 45 seconds
-- Between joins: 60 seconds
-- Between searches: 5 seconds
-
-Max daily per account: 50 adds x 45s = 37.5 minutes of adding
-```
+| Action | Limit | Delay Between |
+|--------|-------|---------------|
+| Member adds | 50/day | 45 seconds |
+| Group joins | 10/day | 60 seconds |
+| Messages | 30/day | Variable |
 
 ### Scaling Examples
 
-| Accounts | Daily Capacity | Monthly | Cost/Month | CPL |
-|----------|----------------|---------|------------|-----|
-| 10 | 500 adds | 15,000 | ~$50 | $0.003 |
-| 20 | 1,000 adds | 30,000 | ~$90 | $0.003 |
-| 30 | 1,500 adds | 45,000 | ~$115 | $0.003 |
-
-**Cost breakdown:**
-- Accounts: $2-3 per account (SMS verification)
-- Proxies: $3-5/month per account
-- Infrastructure: Minimal (runs on any server)
+| Accounts | Daily Adds | Monthly Capacity | Est. Cost |
+|----------|------------|------------------|-----------|
+| 10 | 500 | 15,000 | ~$50 |
+| 20 | 1,000 | 30,000 | ~$90 |
+| 30 | 1,500 | 45,000 | ~$115 |
 
 ---
 
-## Account Lifecycle
+## Niche Configuration
 
+### Search Keywords by Niche
+
+| Niche | Keywords Searched |
+|-------|-------------------|
+| **AI** | AI tools, ChatGPT, AI business, automation, AI money |
+| **MMO** | passive income, side hustle, make money online, online business |
+| **Ecom** | dropshipping, Shopify, Amazon FBA, ecommerce |
+
+### Slave Group Titles
+
+| Niche | Example Titles |
+|-------|----------------|
+| **AI** | "AI Wealth Hub", "AI Automation Pro", "AI Business Secrets" |
+| **MMO** | "Cash Flow Crew", "Income Insiders", "Wealth Builders" |
+| **Ecom** | "Ecom Insiders", "Dropship Elite", "Seller Success" |
+
+---
+
+## Troubleshooting
+
+### Common Errors
+
+| Error | What It Means | Solution |
+|-------|---------------|----------|
+| `FLOOD_WAIT_X` | Rate limited by Telegram | Account auto-pauses, wait X seconds |
+| `PEER_FLOOD` | Serious rate limit | Account goes to 48h cooldown |
+| `USER_PRIVACY_RESTRICTED` | User blocked adds | Skipped automatically |
+| `USER_BANNED_IN_CHANNEL` | User is banned | Added to blacklist |
+| `CHAT_ADMIN_REQUIRED` | Slave needs admin | Give account admin rights |
+
+### Account Gets Banned
+
+1. Don't panic - other accounts keep working
+2. Remove the banned account: Update accounts.json status to "banned"
+3. Add a replacement account: `npm run add-account`
+4. Let it warm up for 14 days before heavy usage
+
+### Slave Group Gets Banned
+
+1. Create a new slave: `npm run create-slave`
+2. Members already in mother group are safe
+3. Old slave members can't be re-added (blacklisted)
+
+---
+
+## Best Practices
+
+### For Maximum Safety
+
+1. **Start slow** - Begin with 10 accounts, scale up gradually
+2. **Respect warmup** - New accounts need 14 days before full activity
+3. **Monitor health** - Check daily reports, pause low-health accounts
+4. **Use proxies** - Different IP per account reduces ban risk
+5. **Rotate accounts** - Don't hammer one account
+
+### For Best Results
+
+1. **Target active groups** - Look for groups with recent messages
+2. **Match niches** - AI leads go to AI slaves, then to AI mother group
+3. **Quality welcome messages** - Make them feel natural, not spammy
+4. **Track conversions** - Monitor how many reach mother group
+
+### For Long-Term Success
+
+1. **Replace accounts monthly** - Budget for 10-20% account loss
+2. **Keep slave inventory** - Always have backup slaves ready
+3. **Clean your lists** - Blacklist unresponsive members
+4. **Review reports** - Weekly check on conversion rates
+
+---
+
+## Data Files
+
+The system stores data in JSON files:
+
+| File | Contents |
+|------|----------|
+| `accounts.json` | Your account pool with health scores |
+| `slaves.json` | Slave group configurations |
+| `mother.json` | Mother group settings |
+| `members.json` | Scraped members queue |
+| `processed.json` | Members already added |
+| `blacklist.json` | Members to never contact |
+| `daily-stats.json` | Historical reports |
+
+---
+
+## Quick Command Reference
+
+### Setup
+```bash
+npm run add-account      # Add single account (interactive)
+npm run setup-mother     # Configure mother group
+npm run create-slave     # Create slave group
 ```
-Account States:
-  warming (14 days) -> active -> cooldown (48h) -> active
-                                    |
-                                 banned -> retired
+
+### Campaign
+```bash
+npm run campaign         # Full cycle: scrape + add + report
+npm run campaign:scrape  # Find groups, extract members
+npm run campaign:add     # Add queued members to slaves
+npm run campaign:daemon  # Start automated scheduler
+npm run report           # Generate stats report
 ```
 
-**Warmup Period:**
-- New accounts: 14-day warmup
-- Reduced daily limits during warmup
-- Status changes to 'active' automatically
-
-**Cooldown:**
-- Triggered by FLOOD_WAIT or low health (<20)
-- Duration: 48 hours
-- Health recovery: +20 during cooldown
-
----
-
-## Retry System
-
-Exponential backoff with Telegram FLOOD_WAIT handling:
-
-```typescript
-async withRetry(fn, options)
-  - maxRetries: 5
-  - baseDelayMs: 1000
-  - maxDelayMs: 60000
-  - Jitter: +/-25% random
-
-Backoff sequence: 1s -> 2s -> 4s -> 8s -> 16s -> 32s (cap 60s)
-
-FLOOD_WAIT handling:
-  - Extracts seconds from error message
-  - Respects Telegram's wait time + 5s buffer
+### Bulk Operations
+```bash
+npm run create-accounts -- --count 20 --provider smspool --country UK
 ```
-
-**Retryable errors:**
-- FLOOD_WAIT (rate limit)
-- Network errors (timeout, connection, ECONNRESET)
-- Server errors (500, 502, 503)
-
-**Permanent errors (no retry):**
-- USER_PRIVACY_RESTRICTED
-- USER_BANNED_IN_CHANNEL
-- CHAT_ADMIN_REQUIRED
-- CHANNEL_PRIVATE
-- USER_ALREADY_PARTICIPANT
-
----
-
-## Deduplication Layers
-
-1. **Member extraction:** Skip already-processed & blacklisted
-2. **Queue processing:** Check processed.json before adding
-3. **Blacklist:** Persistent list of banned users
-4. **Account limits:** Never exceed daily add count
-
----
-
-## Setup Checklist
-
-### Initial Setup
-
-1. **Get API credentials from my.telegram.org**
-   - Create application
-   - Note API ID and API Hash
-
-2. **Add accounts to pool**
-   ```bash
-   npm run add-account
-   # Repeat for each account (20-30 recommended)
-   ```
-
-3. **Configure mother group**
-   ```bash
-   npm run setup-mother
-   ```
-
-4. **Create slave groups (3-5 per niche)**
-   ```bash
-   npm run create-slave
-   # Select niche: ai, mmo, or ecom
-   ```
-
-5. **Start daemon**
-   ```bash
-   npm run campaign:daemon
-   ```
-
-### Ongoing Operations
-
-- Monitor daily reports
-- Replace banned accounts
-- Replace banned slaves
-- Check health scores
-
----
-
-## Related Documentation
-
-- [StorePro CLAUDE.md](../../CLAUDE.md) - Main project overview
-- [Telegram Automation README](../../telegram-automation/README.md) - Quick start guide
-- [Traffic Strategy Overview](../../strategies/traffic-strategy-overview.md) - Full traffic pillar strategy
-
----
-
-*This is internal documentation for the StorePro Operations team.*
