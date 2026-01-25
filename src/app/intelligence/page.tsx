@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -77,11 +78,15 @@ export default function IntelligencePage() {
         }),
       });
       const data = await res.json();
-      alert(`Analysis complete!\n\nSpend estimates: ${data.results.spendEstimates.processed}\nWinners found: ${data.results.winnerEvaluations.winnersFound}`);
+      toast.success('Analysis complete', {
+        description: `Spend estimates: ${data.results.spendEstimates.processed} | Winners found: ${data.results.winnerEvaluations.winnersFound}`,
+      });
       loadData();
     } catch (error) {
       console.error('Bulk analysis failed:', error);
-      alert('Analysis failed. Check console for details.');
+      toast.error('Analysis failed', {
+        description: 'Check console for details.',
+      });
     } finally {
       setAnalyzing(false);
     }

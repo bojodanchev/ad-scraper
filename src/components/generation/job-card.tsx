@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { GenerationJob } from '@/hooks/useGenerationJobs';
 import { VideoPlayer } from './video-player';
 import { ApprovalDialog, QuickApprovalButtons } from './approval-dialog';
@@ -82,15 +83,20 @@ export function JobCard({
   compact = false,
 }: JobCardProps) {
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const statusConfig = STATUS_CONFIG[job.status] || STATUS_CONFIG.pending;
   const StatusIcon = statusConfig.icon;
   const platformConfig = PLATFORM_CONFIG[job.platform as keyof typeof PLATFORM_CONFIG];
 
-  const handleDelete = async () => {
+  const handleDeleteClick = () => {
     if (!onDelete) return;
-    if (!confirm('Are you sure you want to delete this job?')) return;
+    setShowDeleteDialog(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!onDelete) return;
 
     setIsDeleting(true);
     try {
@@ -278,7 +284,7 @@ export function JobCard({
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleDelete}
+              onClick={handleDeleteClick}
               disabled={isDeleting}
               className="text-muted-foreground hover:text-destructive"
             >
@@ -306,6 +312,18 @@ export function JobCard({
           onReject={onReject}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        title="Delete Job"
+        description="Are you sure you want to delete this job? This action cannot be undone."
+        confirmText="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteConfirm}
+        loading={isDeleting}
+      />
     </>
   );
 }

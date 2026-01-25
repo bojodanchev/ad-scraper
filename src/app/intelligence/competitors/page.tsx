@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface Competitor {
   id: string;
@@ -60,6 +62,10 @@ export default function CompetitorsPage() {
   const [newPageUrl, setNewPageUrl] = useState('');
   const [adding, setAdding] = useState(false);
 
+  // Confirm dialog state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [competitorToDelete, setCompetitorToDelete] = useState<string | null>(null);
+
   const loadCompetitors = async () => {
     setLoading(true);
     try {
@@ -92,27 +98,43 @@ export default function CompetitorsPage() {
         setNewPageName('');
         setNewPageUrl('');
         setDialogOpen(false);
+        toast.success('Competitor added', {
+          description: `Now tracking ${newPageName}`,
+        });
         loadCompetitors();
       } else {
         const data = await res.json();
-        alert(data.error || 'Failed to add competitor');
+        toast.error('Failed to add competitor', {
+          description: data.error || 'Please try again',
+        });
       }
     } catch (error) {
       console.error('Failed to add competitor:', error);
-      alert('Failed to add competitor');
+      toast.error('Failed to add competitor', {
+        description: 'Please try again',
+      });
     } finally {
       setAdding(false);
     }
   };
 
-  const removeCompetitor = async (id: string) => {
-    if (!confirm('Remove this competitor from tracking?')) return;
+  const handleRemoveClick = (id: string) => {
+    setCompetitorToDelete(id);
+    setConfirmOpen(true);
+  };
+
+  const removeCompetitor = async () => {
+    if (!competitorToDelete) return;
 
     try {
-      await fetch(`/api/competitors/${id}`, { method: 'DELETE' });
+      await fetch(`/api/competitors/${competitorToDelete}`, { method: 'DELETE' });
+      toast.success('Competitor removed');
       loadCompetitors();
     } catch (error) {
       console.error('Failed to remove competitor:', error);
+      toast.error('Failed to remove competitor');
+    } finally {
+      setCompetitorToDelete(null);
     }
   };
 
@@ -231,7 +253,7 @@ export default function CompetitorsPage() {
                     variant="ghost"
                     size="sm"
                     className="text-muted-foreground hover:text-destructive"
-                    onClick={() => removeCompetitor(competitor.id)}
+                    onClick={() => handleRemoveClick(competitor.id)}
                   >
                     ×
                   </Button>
@@ -295,6 +317,17 @@ export default function CompetitorsPage() {
           ))}
         </div>
       )}
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Remove Competitor"
+        description="Are you sure you want to stop tracking this competitor? This action cannot be undone."
+        confirmText="Remove"
+        variant="destructive"
+        onConfirm={removeCompetitor}
+      />
     </div>
   );
 }

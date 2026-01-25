@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useGenerationJob } from '@/hooks/useGenerationJobs';
 import { VideoPlayer } from '@/components/generation/video-player';
 
@@ -57,6 +59,7 @@ export default function JobDetailPage() {
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
   const [regenerate, setRegenerate] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const handleApprove = async () => {
     setIsApproving(true);
@@ -102,12 +105,17 @@ export default function JobDetailPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this job?')) return;
+  const handleDeleteClick = () => {
+    setShowDeleteDialog(true);
+  };
 
+  const handleDeleteConfirm = async () => {
     const res = await fetch(`/api/generate/${jobId}`, { method: 'DELETE' });
     if (res.ok) {
+      toast.success('Job deleted');
       router.push('/queue');
+    } else {
+      toast.error('Failed to delete job');
     }
   };
 
@@ -159,7 +167,7 @@ export default function JobDetailPage() {
           <Button
             variant="ghost"
             className="text-destructive hover:text-destructive"
-            onClick={handleDelete}
+            onClick={handleDeleteClick}
           >
             <TrashIcon className="w-4 h-4" />
           </Button>
@@ -396,6 +404,17 @@ export default function JobDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        title="Delete Job"
+        description="Are you sure you want to delete this job? This action cannot be undone."
+        confirmText="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }
