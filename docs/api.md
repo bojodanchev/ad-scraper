@@ -15,7 +15,17 @@ This page is for developers. For the user guide, see [Scraping Guide](./scraping
 | `/api/jobs/recover` | POST | Recover stuck jobs |
 | `/api/ads` | GET | Query scraped ads |
 | `/api/ads/[id]` | GET | Get single ad details |
+| `/api/ads/[id]/estimate-spend` | POST/GET | Estimate ad spend |
+| `/api/ads/[id]/evaluate-winner` | POST/GET | Evaluate winner status |
+| `/api/ads/[id]/infer-audience` | POST/GET | AI audience inference |
+| `/api/intelligence/winners` | GET | List winner ads |
+| `/api/intelligence/bulk-analyze` | POST | Bulk analyze ads |
+| `/api/competitors` | GET/POST | List/add competitors |
+| `/api/competitors/[id]` | GET/PATCH/DELETE | Manage competitor |
+| `/api/competitors/[id]/ads` | GET | Get competitor's ads |
 | `/api/creators` | GET | List creators/advertisers |
+
+For detailed intelligence API documentation, see [Ad Intelligence](./intelligence.md).
 
 ---
 

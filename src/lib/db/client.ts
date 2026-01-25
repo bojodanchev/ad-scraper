@@ -166,6 +166,114 @@ export async function initializeDatabase() {
   await c.execute(`CREATE INDEX IF NOT EXISTS idx_creator_stats_advertiser ON creator_stats(advertiser_id)`);
   await c.execute(`CREATE INDEX IF NOT EXISTS idx_creator_stats_recorded ON creator_stats(recorded_at)`);
   await c.execute(`CREATE INDEX IF NOT EXISTS idx_advertisers_followers ON advertisers(follower_count)`);
+
+  // ============================================================================
+  // AD INTELLIGENCE TABLES
+  // ============================================================================
+
+  // Daily snapshots of ad metrics for historical tracking
+  await c.execute(`
+    CREATE TABLE IF NOT EXISTS ad_snapshots (
+      id TEXT PRIMARY KEY,
+      ad_id TEXT NOT NULL REFERENCES ads(id),
+      snapshot_date TEXT NOT NULL,
+      likes INTEGER,
+      comments INTEGER,
+      shares INTEGER,
+      views INTEGER,
+      impressions_min INTEGER,
+      impressions_max INTEGER,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT
+    )
+  `);
+
+  // AI-inferred audience targeting from creative analysis
+  await c.execute(`
+    CREATE TABLE IF NOT EXISTS audience_inference (
+      id TEXT PRIMARY KEY,
+      ad_id TEXT NOT NULL REFERENCES ads(id),
+      inferred_age_min INTEGER,
+      inferred_age_max INTEGER,
+      inferred_gender TEXT,
+      inferred_income_level TEXT,
+      inferred_interests TEXT,
+      inferred_pain_points TEXT,
+      inferred_desires TEXT,
+      inferred_niche TEXT,
+      inferred_buyer_type TEXT,
+      confidence TEXT,
+      raw_analysis TEXT,
+      analyzed_at TEXT
+    )
+  `);
+
+  // Spend estimation based on signals
+  await c.execute(`
+    CREATE TABLE IF NOT EXISTS spend_estimates (
+      id TEXT PRIMARY KEY,
+      ad_id TEXT NOT NULL REFERENCES ads(id),
+      days_running INTEGER,
+      first_seen TEXT,
+      last_seen TEXT,
+      estimated_daily_spend_min TEXT,
+      estimated_daily_spend_max TEXT,
+      estimated_total_spend_min TEXT,
+      estimated_total_spend_max TEXT,
+      variant_count INTEGER,
+      is_scaling INTEGER DEFAULT 0,
+      scaling_signals TEXT,
+      cpm_benchmark_used TEXT,
+      niche TEXT,
+      confidence TEXT,
+      estimated_at TEXT
+    )
+  `);
+
+  // Competitors being tracked
+  await c.execute(`
+    CREATE TABLE IF NOT EXISTS tracked_competitors (
+      id TEXT PRIMARY KEY,
+      platform TEXT NOT NULL,
+      page_id TEXT,
+      page_name TEXT NOT NULL,
+      page_url TEXT,
+      avatar_url TEXT,
+      tracking_since TEXT,
+      last_checked TEXT,
+      last_new_ad_found TEXT,
+      total_ads_tracked INTEGER DEFAULT 0,
+      active_ads_count INTEGER DEFAULT 0,
+      alerts_enabled INTEGER DEFAULT 1,
+      alert_config TEXT,
+      notes TEXT,
+      tags TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT
+    )
+  `);
+
+  // Winner status tracking
+  await c.execute(`
+    CREATE TABLE IF NOT EXISTS ad_winner_status (
+      id TEXT PRIMARY KEY,
+      ad_id TEXT NOT NULL REFERENCES ads(id),
+      is_winner INTEGER DEFAULT 0,
+      winner_score TEXT,
+      criteria_met TEXT,
+      evaluated_at TEXT,
+      became_winner_at TEXT
+    )
+  `);
+
+  // Intelligence indexes
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_ad_snapshots_ad ON ad_snapshots(ad_id)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_ad_snapshots_date ON ad_snapshots(snapshot_date)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_audience_inference_ad ON audience_inference(ad_id)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_spend_estimates_ad ON spend_estimates(ad_id)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_tracked_competitors_platform ON tracked_competitors(platform)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_ad_winner_status_ad ON ad_winner_status(ad_id)`);
+  await c.execute(`CREATE INDEX IF NOT EXISTS idx_ad_winner_status_winner ON ad_winner_status(is_winner)`);
 }
 
 // Auto-initialize on first import with mutex to prevent race conditions

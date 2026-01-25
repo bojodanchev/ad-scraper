@@ -8,6 +8,9 @@ Ad Scraper is a tool that helps you find and save high-performing ads and viral 
 - **Find viral content** - Discover trending videos and posts in your niche
 - **Save winning creatives** - Build a library of ads that work
 - **Generate new ads** - Use scraped content as inspiration for new creatives
+- **Detect winners** - AI identifies ads running 14+ days with strong signals
+- **Estimate spend** - See how much competitors are spending on each ad
+- **Track competitors** - Monitor specific advertisers over time
 
 ## Supported Platforms
 
@@ -28,6 +31,7 @@ Ad Scraper is a tool that helps you find and save high-performing ads and viral 
 
 - [Platforms Guide](./platforms.md) - Detailed info on each platform
 - [Scraping Guide](./scraping.md) - How to run effective scrapes
+- [Ad Intelligence](./intelligence.md) - Winner detection, spend estimation, competitor tracking
 - [Troubleshooting](./troubleshooting.md) - Fix common issues
 - [API Reference](./api.md) - For developers
 

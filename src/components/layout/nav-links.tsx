@@ -9,9 +9,10 @@ import { useGenerationJobsCount } from '@/hooks/useGenerationJobs';
 const NAV_ITEMS = [
   { href: '/ads', label: 'Library' },
   { href: '/creators', label: 'Creators' },
+  { href: '/intelligence', label: 'Intelligence', highlight: true },
   { href: '/scrape', label: 'New Scrape' },
   { href: '/jobs', label: 'Scrape Jobs' },
-  { href: '/generate', label: 'Generate', highlight: true },
+  { href: '/generate', label: 'Generate' },
   { href: '/queue', label: 'Queue', showBadge: true },
   { href: '/docs', label: 'Docs' },
 ];

@@ -115,12 +115,163 @@ export const collectionAds = sqliteTable('collection_ads', {
   addedAt: text('added_at'),
 });
 
+// ============================================================================
+// AD INTELLIGENCE (Historical Tracking, Audience Inference, Spend Estimation)
+// ============================================================================
+
+// Daily snapshots of ad metrics for historical tracking
+export const adSnapshots = sqliteTable('ad_snapshots', {
+  id: text('id').primaryKey(),
+  adId: text('ad_id')
+    .notNull()
+    .references(() => ads.id),
+  snapshotDate: text('snapshot_date').notNull(), // YYYY-MM-DD
+
+  // Metrics at this point in time
+  likes: integer('likes'),
+  comments: integer('comments'),
+  shares: integer('shares'),
+  views: integer('views'),
+  impressionsMin: integer('impressions_min'),
+  impressionsMax: integer('impressions_max'),
+
+  // Status tracking
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+
+  createdAt: text('created_at'),
+});
+
+// AI-inferred audience targeting from creative analysis
+export const audienceInference = sqliteTable('audience_inference', {
+  id: text('id').primaryKey(),
+  adId: text('ad_id')
+    .notNull()
+    .references(() => ads.id),
+
+  // Inferred demographics
+  inferredAgeMin: integer('inferred_age_min'),
+  inferredAgeMax: integer('inferred_age_max'),
+  inferredGender: text('inferred_gender'), // 'male' | 'female' | 'all'
+  inferredIncomeLevel: text('inferred_income_level'), // 'low' | 'middle' | 'high' | 'affluent'
+
+  // Inferred psychographics (JSON arrays)
+  inferredInterests: text('inferred_interests'), // JSON array of interests
+  inferredPainPoints: text('inferred_pain_points'), // JSON array
+  inferredDesires: text('inferred_desires'), // JSON array
+
+  // Inferred targeting parameters
+  inferredNiche: text('inferred_niche'), // 'ecommerce' | 'saas' | 'finance' | 'health' | etc.
+  inferredBuyerType: text('inferred_buyer_type'), // 'impulse' | 'considered' | 'b2b'
+
+  // Analysis metadata
+  confidence: text('confidence'), // 0-1 decimal as string
+  rawAnalysis: text('raw_analysis'), // Full Gemini response
+  analyzedAt: text('analyzed_at'),
+});
+
+// Spend estimation based on signals
+export const spendEstimates = sqliteTable('spend_estimates', {
+  id: text('id').primaryKey(),
+  adId: text('ad_id')
+    .notNull()
+    .references(() => ads.id),
+
+  // Time-based metrics
+  daysRunning: integer('days_running'),
+  firstSeen: text('first_seen'),
+  lastSeen: text('last_seen'),
+
+  // Spend estimates (stored as strings for precision)
+  estimatedDailySpendMin: text('estimated_daily_spend_min'),
+  estimatedDailySpendMax: text('estimated_daily_spend_max'),
+  estimatedTotalSpendMin: text('estimated_total_spend_min'),
+  estimatedTotalSpendMax: text('estimated_total_spend_max'),
+
+  // Scaling signals
+  variantCount: integer('variant_count'), // Number of ad variants detected
+  isScaling: integer('is_scaling', { mode: 'boolean' }).default(false),
+  scalingSignals: text('scaling_signals'), // JSON array of signals detected
+
+  // Estimation metadata
+  cpmBenchmarkUsed: text('cpm_benchmark_used'), // CPM used for calculation
+  niche: text('niche'), // Niche used for CPM lookup
+  confidence: text('confidence'), // 'low' | 'medium' | 'high'
+  estimatedAt: text('estimated_at'),
+});
+
+// Competitors being tracked
+export const trackedCompetitors = sqliteTable('tracked_competitors', {
+  id: text('id').primaryKey(),
+  platform: text('platform').notNull(), // 'meta' | 'tiktok' | 'instagram'
+
+  // Identifier
+  pageId: text('page_id'), // Platform-specific page/account ID
+  pageName: text('page_name').notNull(),
+  pageUrl: text('page_url'),
+  avatarUrl: text('avatar_url'),
+
+  // Tracking metadata
+  trackingSince: text('tracking_since'),
+  lastChecked: text('last_checked'),
+  lastNewAdFound: text('last_new_ad_found'),
+
+  // Stats
+  totalAdsTracked: integer('total_ads_tracked').default(0),
+  activeAdsCount: integer('active_ads_count').default(0),
+
+  // Alerts (JSON array of alert configs)
+  alertsEnabled: integer('alerts_enabled', { mode: 'boolean' }).default(true),
+  alertConfig: text('alert_config'), // JSON: { onNewAd: true, onScaling: true, etc. }
+
+  // Notes
+  notes: text('notes'),
+  tags: text('tags'), // JSON array of tags for organization
+
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at'),
+});
+
+// Winner status tracking (could be on ads table but separate for flexibility)
+export const adWinnerStatus = sqliteTable('ad_winner_status', {
+  id: text('id').primaryKey(),
+  adId: text('ad_id')
+    .notNull()
+    .references(() => ads.id),
+
+  // Winner scoring
+  isWinner: integer('is_winner', { mode: 'boolean' }).default(false),
+  winnerScore: text('winner_score'), // 0-1 probability
+
+  // Criteria met (JSON)
+  criteriaMet: text('criteria_met'), // { daysRunning: true, highEngagement: true, etc. }
+
+  // Timestamps
+  evaluatedAt: text('evaluated_at'),
+  becameWinnerAt: text('became_winner_at'),
+});
+
 // Types
 export type Advertiser = typeof advertisers.$inferSelect;
 export type NewAdvertiser = typeof advertisers.$inferInsert;
 
 export type Ad = typeof ads.$inferSelect;
 export type NewAd = typeof ads.$inferInsert;
+
+// Intelligence types
+export type AdSnapshot = typeof adSnapshots.$inferSelect;
+export type NewAdSnapshot = typeof adSnapshots.$inferInsert;
+
+export type AudienceInference = typeof audienceInference.$inferSelect;
+export type NewAudienceInference = typeof audienceInference.$inferInsert;
+
+export type SpendEstimate = typeof spendEstimates.$inferSelect;
+export type NewSpendEstimate = typeof spendEstimates.$inferInsert;
+
+export type TrackedCompetitor = typeof trackedCompetitors.$inferSelect;
+export type NewTrackedCompetitor = typeof trackedCompetitors.$inferInsert;
+
+export type AdWinnerStatus = typeof adWinnerStatus.$inferSelect;
+export type NewAdWinnerStatus = typeof adWinnerStatus.$inferInsert;
 
 export type ScrapeJob = typeof scrapeJobs.$inferSelect;
 export type NewScrapeJob = typeof scrapeJobs.$inferInsert;
